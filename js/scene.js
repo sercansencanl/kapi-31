@@ -6,6 +6,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // Yuvarlatılmış kutu (kabin, tampon gibi yumuşak hatlı parçalar için)
@@ -157,6 +158,10 @@ export class World {
       const w = Math.max(1, this.host.clientWidth), h = Math.max(1, this.host.clientHeight);
       const c = this.composer = new EffectComposer(r);
       c.addPass(new RenderPass(this.scene, this.camera));
+      // Alan derinliği: başlık ekranında ve kasa görünümünde; kabinde kapalı (masa ve kamyon net kalmalı)
+      this.dof = new BokehPass(this.scene, this.camera, { focus: 60, aperture: 0.00012, maxblur: 0.006 });
+      this.dof.enabled = false;
+      c.addPass(this.dof);
       this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.45, 0.5, 3.0);
       c.addPass(this.bloom);
       c.addPass(new OutputPass());
@@ -857,6 +862,7 @@ export class World {
   }
 
   moveCam(view, dur = 1.1) {
+    this.camView = view;
     const from = { p: this.cam.pos.clone(), t: this.cam.target.clone() };
     const to = VIEWS[view];
     return tween(dur, (k) => {
@@ -1035,6 +1041,17 @@ export class World {
     this.camera.lookAt(target);
     this.camera.rotateZ(sh.r);
 
+    this.onFrame?.(dt, t);
+    if (this.dof) {
+      const want = settings.motion && (this.title || this.camView === 'rear');
+      this.dof.enabled = want;
+      if (want) {
+        const f = this.camera.position.distanceTo(this.title ? this.titleTarget : this.cam.target);
+        const u = this.dof.uniforms;
+        u.focus.value += (f - u.focus.value) * Math.min(1, dt * 4);
+        u.aperture.value = this.title ? 0.00006 : 0.0009;
+      }
+    }
     if (this.composer) {
       this.grade.uniforms.time.value = (t * 60) % 1000;
       this.composer.render();

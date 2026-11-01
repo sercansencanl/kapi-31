@@ -41,7 +41,7 @@ export async function upgradeRealism(world, { onDone } = {}) {
   const tl = new THREE.TextureLoader();
   const maxA = Math.min(8, r.capabilities.getMaxAnisotropy());
   try {
-    const [hdr, aDiff, aNor, aArm, cDiff, cNor, cArm, kNor, kArm] = await Promise.all([
+    const [hdr, aDiff, aNor, aArm, cDiff, cNor, cArm, kNor, kArm, wNor] = await Promise.all([
       new RGBELoader().setDataType(THREE.FloatType).loadAsync(SKY),
       loadTex(tl, 'asphalt_02_diff_1k.jpg', { srgb: true, repeat: [55, 2], aniso: maxA }),
       loadTex(tl, 'asphalt_02_nor_gl_1k.jpg', { repeat: [55, 2], aniso: maxA }),
@@ -51,6 +51,7 @@ export async function upgradeRealism(world, { onDone } = {}) {
       loadTex(tl, 'concrete_floor_02_arm_1k.jpg', { repeat: [140, 140], aniso: maxA }),
       loadTex(tl, 'container_side_nor_gl_1k.jpg', { repeat: [3, 1], aniso: maxA }),
       loadTex(tl, 'container_side_arm_1k.jpg', { repeat: [3, 1], aniso: maxA }),
+      loadTex(tl, 'waternormals.jpg', { repeat: [40, 18], aniso: maxA }),
     ]);
 
     // --- Gökyüzü: gün batımı kameranın baktığı yönde, deniz üzerinde dursun ---
@@ -101,6 +102,12 @@ export async function upgradeRealism(world, { onDone } = {}) {
     };
     corr(world.yardMat); corr(world.shipMat);
     world.onTruckMaterials = ({ sideMat }) => corr(sideMat, [4, 1]);
+
+    // --- Deniz: pürüzsüz, gökyüzünü yansıtan, iki katman kayan dalga ---
+    const sea = world.sea.material;
+    sea.flatShading = false; sea.color.set('#1b4f5c'); sea.roughness = 0.06; sea.metalness = 0.0;
+    sea.normalMap = wNor; sea.normalScale.set(0.35, 0.35); sea.envMapIntensity = 1.4; sea.needsUpdate = true;
+    world.onFrame = (dt, t) => { wNor.offset.set(t * 0.004, t * 0.0025); };
 
     world.realism = true;
     onDone?.(true);
