@@ -119,6 +119,7 @@ export class World {
     this.buildBirds();
     this.buildSmoke();
     this.buildDesk();
+    this.buildTractors();
     this.setupPost();
 
     this.raycaster = new THREE.Raycaster();
@@ -574,7 +575,15 @@ export class World {
       box(13, 1.8, 2.2, cw, 0, 28, 2, c);
       box(3, 2.2, 70, cw, 0, 30, -22, c);
       box(5, 3.5, 6, cr, 0, 32.6, 10, c);
-      box(2.4, 1.8, 2.4, cr, 0, 27.6, -14 - i * 7, c);
+      // Arabası (trolley), halatlar, spreader ve taşınan konteyner: gemiden rıhtıma yük indirir
+      const tro = new THREE.Group(); tro.position.set(0, 27.6, -14 - i * 7); c.add(tro);
+      box(2.4, 1.8, 2.4, cr, 0, 0, 0, tro);
+      const cableMat = std('#2a2d30', 0.6, 0.6);
+      const cables = [-1.2, 1.2].map((cx) => box(0.07, 1, 0.07, cableMat, cx, 0, 0, c));
+      const spreader = new THREE.Group(); c.add(spreader);
+      box(6.2, 0.35, 2.5, std('#e3b12b', 0.5, 0.3), 0, 0, 0, spreader);
+      const cargo = box(6, 2.6, 2.44, std(YARD_COLORS[(i * 3) % YARD_COLORS.length], 0.7, 0.2), 0, -1.5, 0, spreader);
+      (this.cranes ||= []).push({ tro, cables, spreader, cargo, phase: i * 8.5 });
       [[-1.2, 1], [1.2, 1]].forEach(([lx]) => box(0.6, 18, 0.6, cw, lx, 39, 6, c));
       const tie = box(0.25, 0.25, 50, cw, 0, 36, -20, c); tie.rotation.x = -0.17;
     });
@@ -626,6 +635,57 @@ export class World {
     ridgeLayer(-640, 38, 34, '#ad9fb2', 2.1);
   }
 
+  // Saha traktörleri: bariyerlerin arkasındaki şeritte konteyner taşır
+  buildTractors() {
+    this.tractors = [];
+    const mk = (z, dir, color, offset) => {
+      const g = new THREE.Group(); g.position.set(0, 0, z); g.rotation.y = dir > 0 ? Math.PI : 0; this.scene.add(g);
+      const cab = std(color, 0.45, 0.3), dark = std('#1c2024', 0.75, 0.3), glassM = std('#1d2a33', 0.1, 0.6);
+      rbox(1.8, 1.9, 2.3, 0.1, cab, -3.4, 1.65, 0, g);
+      box(0.05, 0.8, 1.9, glassM, -4.31, 2.1, 0, g);
+      box(8.6, 0.3, 1.0, dark, 0.3, 0.75, 0, g);
+      box(6, 2.6, 2.44, std(YARD_COLORS[Math.floor(Math.random() * YARD_COLORS.length)], 0.7, 0.2), 1.4, 2.25, 0, g);
+      const ws = [];
+      [-3.3, 2.6, 3.6].forEach((x) => [-0.95, 0.95].forEach((wz) => {
+        const w = cyl(0.45, 0.45, 0.35, 14, std('#161718', 0.9), g); w.rotation.x = Math.PI / 2; w.position.set(x, 0.45, wz); ws.push(w);
+      }));
+      const beacon = box(0.18, 0.12, 0.18, std('#ffb347', 0.4, 0, { emissive: '#ff9a1a', emissiveIntensity: 2.5 }), -3.4, 2.68, 0, g);
+      this.tractors.push({ g, ws, dir, offset, beacon });
+    };
+    mk(-8.6, 1, '#2c6a8a', 0);
+    mk(-10.2, -1, '#b9821f', 0.5);
+  }
+
+  animateLife(dt, t) {
+    // Vinçler: 26 sn'lik döngü. z: gemi (-40) ile rıhtım (2) arası, h: spreader yüksekliği
+    const P = 26, ss = (k) => k * k * (3 - 2 * k);
+    const seg = (u, a, b) => ss(Math.min(1, Math.max(0, (u - a) / (b - a))));
+    for (const cr of this.cranes || []) {
+      const u = (t + cr.phase) % P;
+      let z, h, carry;
+      if (u < 6) { z = 2 + (-40 - 2) * seg(u, 0, 6); h = 20; carry = false; }
+      else if (u < 9) { z = -40; h = 20 - 4.5 * seg(u, 6, 9); carry = false; }
+      else if (u < 12) { z = -40; h = 15.5 + 6.5 * seg(u, 9, 12); carry = true; }
+      else if (u < 18) { z = -40 + 42 * seg(u, 12, 18); h = 22; carry = true; }
+      else if (u < 21) { z = 2; h = 22 - 18.7 * seg(u, 18, 21); carry = true; }
+      else { z = 2; h = 3.3 + 16.7 * seg(u, 21, 26); carry = false; }
+      cr.tro.position.z = z;
+      cr.spreader.position.set(0, h, z);
+      cr.cargo.visible = carry;
+      const len = 27.6 - 0.9 - h;
+      cr.cables.forEach((cb) => { cb.scale.y = Math.max(0.01, len); cb.position.set(cb.position.x, h + len / 2, z); });
+    }
+    // Traktörler: şerit boyunca gidip gelir (ekran dışında başa sarar)
+    const L = 150, speed = 4.2;
+    for (const tr of this.tractors || []) {
+      const d = ((t * speed / L + tr.offset) % 1) * L - L / 2;
+      tr.g.position.x = tr.dir > 0 ? d : -d;
+      const spin = -(t * speed) / 0.45;
+      tr.ws.forEach((w) => w.rotation.set(Math.PI / 2, spin, 0)); // Euler XYZ: Y, tekerin kendi ekseni
+      tr.beacon.material.emissiveIntensity = 1.2 + 1.8 * (Math.sin(t * 9) > 0 ? 1 : 0);
+    }
+  }
+
   buildBirds() {
     this.birds = [];
     const geo = new THREE.BufferGeometry();
@@ -670,7 +730,7 @@ export class World {
     // Yan camlar ve kapı detayları
     [-1, 1].forEach((sd) => {
       rbox(1.08, 0.8, 0.05, 0.03, dark, -3.95, 2.86, sd * 1.226, body);
-      box(1.0, 0.72, 0.03, glass, -3.95, 2.86, sd * 1.24, body);
+      box(1.0, 0.72, 0.03, sd > 0 ? std('#ffffff', 0.15, 0.3, { map: art.driverWindow() }) : glass, -3.95, 2.86, sd * 1.24, body);
       box(0.012, 1.55, 0.03, dark, -3.35, 2.15, sd * 1.24, body);        // kapı aralığı
       box(0.16, 0.05, 0.05, chrome, -3.52, 2.3, sd * 1.255, body);       // kapı kolu
       box(1.7, 0.1, 0.03, paint, -3.4, 1.9, sd * 1.245, body);           // kapı şeridi
@@ -1041,6 +1101,7 @@ export class World {
     this.camera.lookAt(target);
     this.camera.rotateZ(sh.r);
 
+    this.animateLife(dt, t);
     this.onFrame?.(dt, t);
     if (this.dof) {
       const want = settings.motion && (this.title || this.camView === 'rear');

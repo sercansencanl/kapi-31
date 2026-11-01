@@ -472,6 +472,31 @@ export function grilleTexture() {
   return tex(c);
 }
 
+// Kabin yan camı: karanlık iç mekân, koltuk, sürücü silüeti ve cam yansıması.
+// Kamyon -X yönüne bakıyor; +Z yüzünde u ekseni +X'e gider, yani ön taraf görüntünün solunda.
+let driverTex;
+export function driverWindow() {
+  if (driverTex) return driverTex;
+  const [c, g] = cv(256, 192);
+  const bg = g.createLinearGradient(0, 0, 0, 192);
+  bg.addColorStop(0, '#2a3a44'); bg.addColorStop(1, '#0e1418');
+  g.fillStyle = bg; g.fillRect(0, 0, 256, 192);
+  g.fillStyle = '#1a1d20'; g.beginPath(); g.roundRect(150, 40, 70, 160, 14); g.fill();      // koltuk sırtı
+  g.fillStyle = '#23272b'; g.beginPath(); g.roundRect(158, 18, 52, 34, 10); g.fill();       // koltuk başlığı
+  g.fillStyle = '#0b0d0f';
+  g.beginPath(); g.ellipse(132, 70, 22, 27, 0, 0, Math.PI * 2); g.fill();                    // baş
+  g.beginPath(); g.moveTo(84, 192); g.bezierCurveTo(88, 120, 108, 100, 132, 100);
+  g.bezierCurveTo(160, 100, 178, 122, 182, 192); g.fill();                                   // omuzlar
+  g.strokeStyle = '#0b0d0f'; g.lineWidth = 9;
+  g.beginPath(); g.ellipse(52, 150, 34, 46, -0.25, -1.9, 1.2); g.stroke();                   // direksiyon
+  const rf = g.createLinearGradient(0, 0, 256, 192);                                         // cam yansıması
+  rf.addColorStop(0, 'rgba(255,255,255,0)'); rf.addColorStop(0.42, 'rgba(255,255,255,0)');
+  rf.addColorStop(0.5, 'rgba(255,240,220,0.22)'); rf.addColorStop(0.6, 'rgba(255,255,255,0)');
+  g.fillStyle = rf; g.fillRect(0, 0, 256, 192);
+  driverTex = tex(c);
+  return driverTex;
+}
+
 // Konsol yüzeyi: fırçalanmış, hafif aşınmış metal.
 export function brushedMetal() {
   const [c, g] = cv(512, 512);
