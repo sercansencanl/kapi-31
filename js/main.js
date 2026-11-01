@@ -6,7 +6,7 @@ import * as ui from './ui.js';
 import { $, fmt } from './ui.js';
 import { audio } from './audio.js';
 import { settings, wait } from './feel.js';
-import { iconURL } from './art.js';
+import { iconURL, kasaLine } from './art.js';
 import { upgradeRealism } from './realism.js';
 
 // 3D dokular (tabela, konteyner yazıları) fontları kullanıyor: önce fontlar.
@@ -188,6 +188,7 @@ const ruleLine = (c) => ({
   beyan: 'Beyan = senin hesabın',
   asiri: `Kantar ${RULES.yukSiniri} t üstündeyse geri çevir`,
   skdm: 'SKDM ürünü: beyan doğruysa vergi, yoksa geri çevir',
+  soguk: 'Frigo termografı +4 °C üstündeyse geri çevir',
   arac: 'Kamyonun motoru = manifestodaki araç',
 }[c]);
 
@@ -353,8 +354,9 @@ function showNoteCard(show) {
       <dt>Yük</dt><dd>${m.product.ad}</dd>
       <dt>Miktar</dt><dd>${m.tons} ton</dd>
       ${day().formula === 'tam' ? `<dt>Araç</dt><dd>${m.vehicle.ad}</dd>` : ''}
+      <dt>Kasa</dt><dd>${kasaLine(m.product)}</dd>
     </dl>
-    <p>Kantar: ${S.truck.cargo.tons},0 t</p>`;
+    <p>Kantar: ${S.truck.cargo.tons},0 t${S.truck.temp != null ? ` · Termograf: +${String(S.truck.temp).replace('.', ',')} °C` : ''}</p>`;
   el.hidden = false;
 }
 
@@ -402,6 +404,8 @@ async function nextTruck() {
   if (S.view !== 'booth') { S.view = 'booth'; world.moveCam('booth', 0.8); world.deskShow(true, 0.7); }
 
   S.truck = makeTruck(S.deck[S.idx], day());
+  const f = window.__k31?.force;
+  if (f) { for (let i = 0; i < 300 && S.truck.cargo.product.id !== f; i++) S.truck = makeTruck(S.deck[S.idx], day()); }
   const eng = audio.engine();
   await world.spawnTruck(S.truck, (lvl) => eng.set(lvl));
   audio.brake();
@@ -419,7 +423,7 @@ async function nextTruck() {
   await wait(0.45);
   S.phase = 'ready';
   world.interactive = true;
-  ui.setInspect(true, 'Kasayı aç');
+  ui.setInspect(true, S.truck.cargo.product.kasa === 'acik' ? 'Yüke bak' : 'Kasayı aç');
   setControls(true);
   ui.formReset(S.truck, day());
   if (day().calc) openBook(true, 'calc');
@@ -594,5 +598,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// Yalnızca test için: ?debug ile sonraki kamyonun hatası/ürünü zorlanabilir
+if (location.search.includes('debug')) window.__k31 = { S, world, force: null };
 $('loading').hidden = true;
 titleScreen();

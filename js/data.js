@@ -1,14 +1,14 @@
 // Ürün faktörleri (t CO2e / ton ürün): yaşam döngüsü ve sektör ortalamalarından yuvarlatıldı.
 // skdm: AB Sınırda Karbon Düzenleme Mekanizması kapsamındaki ürün grupları (demir-çelik, alüminyum, çimento, gübre).
 export const PRODUCTS = [
-  { id: 'sigir',     ad: 'Sığır eti', faktor: 60, gida: true,  skdm: false, renk: '#a63d32' },
-  { id: 'peynir',    ad: 'Peynir',    faktor: 20, gida: true,  skdm: false, renk: '#e0b43c' },
-  { id: 'pirinc',    ad: 'Pirinç',    faktor: 4,  gida: true,  skdm: false, renk: '#c9b98f' },
-  { id: 'bugday',    ad: 'Buğday',    faktor: 1,  gida: true,  skdm: false, renk: '#c48a2c' },
-  { id: 'aluminyum', ad: 'Alüminyum', faktor: 16, gida: false, skdm: true,  renk: '#8c9aa4' },
-  { id: 'gubre',     ad: 'Gübre',     faktor: 3,  gida: false, skdm: true,  renk: '#6f8f4e' },
-  { id: 'celik',     ad: 'Çelik',     faktor: 2,  gida: false, skdm: true,  renk: '#4f5d68' },
-  { id: 'cimento',   ad: 'Çimento',   faktor: 1,  gida: false, skdm: true,  renk: '#a7a29a' },
+  { id: 'sigir',     ad: 'Sığır eti', faktor: 60, gida: true,  skdm: false, renk: '#a63d32', kasa: 'frigo', maxIsi: 4 },
+  { id: 'peynir',    ad: 'Peynir',    faktor: 20, gida: true,  skdm: false, renk: '#e0b43c', kasa: 'frigo', maxIsi: 4 },
+  { id: 'pirinc',    ad: 'Pirinç',    faktor: 4,  gida: true,  skdm: false, renk: '#c9b98f', kasa: 'kuru' },
+  { id: 'bugday',    ad: 'Buğday',    faktor: 1,  gida: true,  skdm: false, renk: '#c48a2c', kasa: 'kuru' },
+  { id: 'aluminyum', ad: 'Alüminyum', faktor: 16, gida: false, skdm: true,  renk: '#8c9aa4', kasa: 'acik' },
+  { id: 'gubre',     ad: 'Gübre',     faktor: 3,  gida: false, skdm: true,  renk: '#6f8f4e', kasa: 'kuru' },
+  { id: 'celik',     ad: 'Çelik',     faktor: 2,  gida: false, skdm: true,  renk: '#4f5d68', kasa: 'acik' },
+  { id: 'cimento',   ad: 'Çimento',   faktor: 1,  gida: false, skdm: true,  renk: '#a7a29a', kasa: 'kuru' },
 ];
 
 // Taşıma faktörleri (t CO2e / 100 km), 20 tona kadar yük için. Oyun dengesi için abartıldı.
@@ -49,6 +49,7 @@ export const RULES = {
   vergiBirim: 80,    // SKDM: beyan edilen her t CO2e için €
 };
 
+
 export const SKDM_LIST = PRODUCTS.filter((p) => p.skdm).map((p) => p.ad).join(', ');
 
 // Ev ekonomisi (₺, kurgusal). Limandan geçen emisyon ertesi günün sıcaklığını artırır;
@@ -70,30 +71,31 @@ export const CHECKS = {
   asiri: { ad: 'Yük sınırı',       metin: `Kantar ${RULES.yukSiniri} tonu aşıyorsa tır aşırı yüklü. Geri çevir.` },
   skdm:  { ad: 'SKDM kapsamı',     metin: `${SKDM_LIST} karbon beyanı taşımak zorunda. Beyan doğruysa vergi kes (her ton CO₂e için ${RULES.vergiBirim} €). Beyan yoksa geri çevir. Gıda gibi kapsam dışı ürünler beyansız geçer.` },
   beyan: { ad: 'Beyan kontrolü',   metin: 'Karbon beyanı, emisyon formunda bulduğun toplamla aynı olmalı. Değilse geri çevir.' },
+  soguk: { ad: 'Soğuk zincir',     metin: 'Peynir ve et frigo kasada taşınır. Kasanın yanındaki termograf +4 °C üstündeyse soğuk zincir bozulmuştur. Geri çevir.' },
   arac:  { ad: 'Araç kontrolü',    metin: `Kamyonun motoru manifestodaki araç tipiyle aynı olmalı. Değilse geri çevir. ${RULES.agirEsik} tonun üstünde ağır yük faktörünü kullan.` },
 };
 
 export const DAYS = [
   {
     no: 1,
-    deck: ['temiz', 'urun', 'temiz', 'kilo', 'asiri'],
-    checks: ['urun', 'kilo', 'asiri'],
+    deck: ['temiz', 'urun', 'soguk', 'kilo', 'temiz', 'asiri'],
+    checks: ['urun', 'kilo', 'asiri', 'soguk'],
     choices: ['onay', 'ret'],
     formula: 'urun', calc: false,
-    genelge: `Karbon Sınır Yönetmeliği bugün yürürlüğe giriyor. İlk gün sadece belgeyi yükle karşılaştıracaksın: kasada ne var, kantar ne diyor. Tır başına yasal yük sınırı ${RULES.yukSiniri} ton.`,
+    genelge: `Karbon Sınır Yönetmeliği bugün yürürlüğe giriyor. İlk gün sadece belgeyi yükle karşılaştıracaksın: kasada ne var, kantar ne diyor. Tır başına yasal yük sınırı ${RULES.yukSiniri} ton. Peynir ve et frigo kasada gelir; termograf +4 °C üstündeyse soğuk zincir bozulmuştur.`,
   },
   {
     no: 2,
     deck: ['skdm', 'temiz', 'beyan', 'beyansiz', 'kacak', 'skdm'],
-    checks: ['urun', 'kilo', 'asiri', 'skdm', 'beyan'],
+    checks: ['urun', 'kilo', 'asiri', 'soguk', 'skdm', 'beyan'],
     choices: ['onay', 'vergi', 'ret'],
     formula: 'urun', calc: true,
     genelge: `SKDM kapsamındaki ürünler (${SKDM_LIST}) bugünden itibaren karbon beyanı taşıyor. Emisyon formunu doldur: ton × ürün faktörü. Beyan doğruysa vergi kes, yanlışsa ya da hiç yoksa geri çevir. Bazı firmalar çeliği gıda diye beyan ediyor olabilir, kasaya bak.`,
   },
   {
     no: 3,
-    deck: ['skdm', 'arac', 'beyan', 'asiri', 'temiz', 'kilo', 'skdm'],
-    checks: ['urun', 'kilo', 'asiri', 'skdm', 'beyan', 'arac'],
+    deck: ['skdm', 'arac', 'beyan', 'soguk', 'temiz', 'kilo', 'skdm'],
+    checks: ['urun', 'kilo', 'asiri', 'soguk', 'skdm', 'beyan', 'arac'],
     choices: ['onay', 'vergi', 'ret'],
     formula: 'tam', calc: true,
     genelge: `Taşıma emisyonu da artık beyana giriyor: (km ÷ 100) × araç faktörü. ${RULES.agirEsik} tonun üstündeki ağır yüklerde araç faktörü ${String(RULES.agirKatsayi).replace('.', ',')} katına çıkar. Bazı firmalar dizel kamyonlarını elektrikli diye kaydettiriyor, kamyona bak.`,

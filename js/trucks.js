@@ -5,6 +5,8 @@ const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 const VLIST = Object.values(VEHICLES);
 const SKDM = PRODUCTS.filter((p) => p.skdm);
 const FOOD = PRODUCTS.filter((p) => !p.skdm);
+const COLD = PRODUCTS.filter((p) => p.kasa === 'frigo');
+const r1 = (a, b) => Math.round((a + Math.random() * (b - a)) * 10) / 10;
 
 // Ağır yükte (20 t üstü) taşıma faktörü artar.
 export const vehFactor = (v, tons) => v.faktor * (tons > RULES.agirEsik ? RULES.agirKatsayi : 1);
@@ -35,7 +37,8 @@ export function makeTruck(fault, day) {
   const formula = day.formula, skdmDay = day.no >= 2;
   const E = (p, tons, km, v) => emission(p, tons, km, v, formula);
   const needsSkdm = ['skdm', 'beyan', 'beyansiz'].includes(fault) || (fault === 'arac');
-  const product = fault === 'kacak' ? pick(SKDM)
+  const product = fault === 'soguk' ? pick(COLD)
+    : fault === 'kacak' ? pick(SKDM)
     : needsSkdm ? pick(SKDM)
       : fault === 'temiz' && skdmDay ? pick(FOOD)
         : pick(PRODUCTS);
@@ -93,6 +96,9 @@ export function makeTruck(fault, day) {
       t.reason = `${product.ad} SKDM kapsamında ama karbon beyanı yok.`;
       t.correct = 'ret';
       break;
+    case 'soguk':
+      t.correct = 'ret';
+      break;
     case 'arac':
       t.manifest = { ...t.manifest, vehicle: Math.random() < 0.6 ? VEHICLES.elektrik : VEHICLES.lng };
       t.reason = `Manifestoda ${t.manifest.vehicle.ad} yazıyor ama kamyonda egzoz bacası ve duman var: dizel.`;
@@ -100,6 +106,13 @@ export function makeTruck(fault, day) {
       break;
     default: // beyan
       break;
+  }
+
+  // Soğuk zincir: frigo kasada termograf okuması
+  if (product.kasa === 'frigo') {
+    const max = product.maxIsi ?? 4;
+    t.temp = fault === 'soguk' ? r1(max + 4, max + 10) : r1(0.5, max - 0.2);
+    if (fault === 'soguk') t.reason = `Termograf +${String(t.temp).replace('.', ',')} °C gösteriyor, ${product.ad} en çok +${max} °C'de taşınmalı. Soğuk zincir bozulmuş.`;
   }
 
   // Beyan belgelere göre hesaplanmış görünür (sahte beyan hariç). Sadece SKDM ürünlerinde var.

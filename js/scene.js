@@ -771,58 +771,134 @@ export class World {
     // Şasi
     box(10.5, 0.3, 1.0, dark, 0.75, 0.9, 0, body);
 
-    // Konteyner (içi boş; kapılar açılınca sandıklar görünür)
-    const sideTex = art.containerSide(t.firm, t.code);
-    const sideMat = std('#ffffff', 0.6, 0.2, { map: sideTex });
-    this.onTruckMaterials?.({ sideMat, paint });
+    // ---------------- Kasa: ürüne göre frigo, kuru yük ya da açık platform ----------------
+    const kasa = t.cargo.product.kasa || 'kuru';
     const cx = 2.1, cy = 2.45;
-    box(8, 0.08, 2.5, interior, cx, 1.19, 0, body);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(8, 0.08, 2.5), [paint, paint, paint, interior, paint, paint]);
-    roof.position.set(cx, 3.71, 0); roof.castShadow = true; body.add(roof);
-    box(0.08, 2.6, 2.5, paint, -1.86, cy, 0, body);
-    const rWall = new THREE.Mesh(new THREE.BoxGeometry(8, 2.6, 0.06), [paint, paint, paint, paint, sideMat, interior]);
-    rWall.position.set(cx, cy, 1.22); rWall.castShadow = true; rWall.receiveShadow = true; body.add(rWall);
-    const lWall = new THREE.Mesh(new THREE.BoxGeometry(8, 2.6, 0.06), [paint, paint, paint, paint, interior, sideMat]);
-    lWall.position.set(cx, cy, -1.22); lWall.castShadow = true; body.add(lWall);
-    const post = std(t.firm.renk, 0.6, 0.3); post.color.multiplyScalar(0.7);
-    [[-1.9, 1.25], [-1.9, -1.25], [6.1, 1.25], [6.1, -1.25]].forEach(([x, z]) => box(0.14, 2.66, 0.14, post, x, cy, z, body));
-    box(8.1, 0.18, 2.56, post, cx, 1.15, 0, body);
-    box(0.12, 0.2, 2.56, post, 6.1, 3.7, 0, body);
-    const casting = std('#2b2f33', 0.7, 0.4);
-    [-1.93, 6.13].forEach((x) => [1.15, 3.75].forEach((y) => [-1.27, 1.27].forEach((z) => box(0.2, 0.16, 0.16, casting, x, y, z, body))));
-    const pickables = [rWall, lWall, roof];
-
-    // Kapılar
-    const doors = [];
-    [[1.25, -1], [-1.25, 1]].forEach(([hz, dir], i) => {
-      const hinge = new THREE.Group(); hinge.position.set(6.12, cy, hz); body.add(hinge);
-      const dm = std('#ffffff', 0.6, 0.2, { map: art.containerDoor(t.firm, t.code, i === 0) });
-      const door = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.56, 1.24), [dm, interior, paint, paint, paint, paint]);
-      door.position.set(0, 0, dir * 0.62); door.castShadow = true; hinge.add(door);
-      [0.3, 0.85].forEach((o) => { const r = cyl(0.035, 0.035, 2.5, 6, chrome, hinge); r.position.set(0.07, 0, dir * o); });
-      box(0.08, 0.12, 0.3, chrome, 0.09, -0.3, dir * 0.95, hinge);
-      hinge.userData.dir = dir;
-      doors.push(hinge); pickables.push(door);
-    });
-
-    // Sandıklar (kapı tarafından başlayarak doldurulur)
-    const crates = new THREE.Group(); body.add(crates);
-    const woodMat = std('#ffffff', 0.85, 0, { map: art.woodTexture() });
-    const label = std('#ffffff', 0.8, 0, { map: art.crateLabel(t.cargo.product) });
-    const crateGeo = new THREE.BoxGeometry(1.05, 1.02, 1.08);
-    const crateMeshes = [];
-    const n = Math.min(t.cargo.tons, 24);
-    for (let i = 0; i < n; i++) {
-      const depth = Math.floor(i / 4), level = Math.floor((i % 4) / 2), side = i % 2;
-      const c = new THREE.Mesh(crateGeo, [label, woodMat, woodMat, woodMat, label, label]);
-      c.position.set(5.45 - depth * 1.15, 1.75 + level * 1.06, side ? 0.58 : -0.58);
-      c.rotation.y = (Math.random() - 0.5) * 0.06;
-      c.castShadow = true; c.receiveShadow = true;
-      c.userData = { crate: true, baseY: c.position.y, product: t.cargo.product };
-      crates.add(c); crateMeshes.push(c);
-    }
-    const lamp = new THREE.PointLight(0xffe0b0, 0, 10, 1.4);
+    const pickables = [], doors = [], crateMeshes = [];
+    let thermo = null;
+    const lamp = new THREE.PointLight(kasa === 'frigo' ? 0xc8e6ff : 0xffe0b0, 0, 10, 1.4);
     lamp.position.set(7.2, 3.0, 0); body.add(lamp);
+    const woodMat = std('#ffffff', 0.85, 0, { map: art.woodTexture() });
+    const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
+
+    // Bir yük birimi: görünmez seçim kutusu + içinde görsel parçalar (üzerine gelince birlikte kalkar)
+    const unit = (x, y, z, w, h, d) => {
+      const pr = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), proxyMat);
+      pr.position.set(x, y, z);
+      pr.userData = { crate: true, baseY: y, product: t.cargo.product };
+      body.add(pr); crateMeshes.push(pr);
+      return pr;
+    };
+    const pallet = (parent, h) => { const pl = box(1.05, 0.14, 1.08, woodMat, 0, -h / 2 + 0.07, 0, parent); pl.castShadow = false; };
+
+    if (kasa === 'acik') {
+      // Açık platform (yassı uzun kasa): taban, ön koruma, yan dikmeler
+      const steel = std('#3b4249', 0.55, 0.6);
+      const deck = box(8.1, 0.22, 2.5, steel, cx, 1.24, 0, body);
+      box(8.1, 0.06, 2.52, std('#ffffff', 0.7, 0.1, { map: art.hazardTexture() }), cx, 1.36, 0, body);
+      const head = box(0.12, 1.5, 2.5, paint, -1.86, 2.1, 0, body);
+      for (let x = -1.2; x <= 6.0; x += 1.2) [-1.22, 1.22].forEach((z) => box(0.08, 0.45, 0.08, steel, x, 1.58, z, body));
+      pickables.push(deck, head);
+      const strapMat = std('#e8762b', 0.6, 0.1);
+      if (t.cargo.product.id === 'celik') {
+        // Rulo sac bobinleri: eksen boyuna, beşiklerde, kayışlı
+        const coilMat = std('#8e989f', 0.32, 0.85), eyeMat = std('#2a2f33', 0.6, 0.5);
+        const n = Math.max(3, Math.min(5, Math.ceil(t.cargo.tons / 6)));
+        for (let i = 0; i < n; i++) {
+          const x = 5.2 - i * (7.0 / n) - 0.2;
+          const pr = unit(x, 2.12, 0, 1.3, 1.5, 1.5);
+          const c = cyl(0.74, 0.74, 1.25, 32, coilMat, pr); c.rotation.z = Math.PI / 2;
+          [-0.63, 0.63].forEach((ox) => { const e = cyl(0.3, 0.3, 0.02, 24, eyeMat, pr); e.rotation.z = Math.PI / 2; e.position.x = ox; });
+          [-0.62, 0.62].forEach((oz) => box(1.0, 0.18, 0.18, woodMat, 0, -0.68, oz, pr));
+          const strap = new THREE.Mesh(new THREE.TorusGeometry(0.76, 0.025, 6, 32), strapMat); strap.rotation.y = Math.PI / 2; pr.add(strap);
+          pickables.push(c);
+        }
+      } else {
+        // Alüminyum külçe istifleri: bantlı, aralıklı
+        const ingot = std('#c6ced4', 0.3, 0.9), band = std('#2a2f33', 0.5, 0.4);
+        const n = Math.min(t.cargo.tons, 24);
+        for (let i = 0; i < n; i++) {
+          const depth = Math.floor(i / 4), level = Math.floor((i % 4) / 2), side = i % 2;
+          const pr = unit(5.4 - depth * 1.18, 1.75 + level * 0.62, side ? 0.6 : -0.6, 1.05, 0.58, 1.05);
+          for (let k = 0; k < 4; k++) box(1.0, 0.13, 0.98, ingot, 0, -0.22 + k * 0.145, 0, pr);
+          [-0.3, 0.3].forEach((bx) => box(0.04, 0.6, 1.0, band, bx, 0, 0, pr));
+          pickables.push(pr);
+        }
+      }
+    } else {
+      // Kapalı kasa: kuru yük konteyneri ya da frigo
+      const frigo = kasa === 'frigo';
+      const shell = frigo ? std('#eef0ee', 0.5, 0.15) : paint;
+      const sideTex = frigo ? art.reeferSide(t.firm, t.code) : art.containerSide(t.firm, t.code);
+      const sideMat = std('#ffffff', frigo ? 0.45 : 0.6, frigo ? 0.1 : 0.2, { map: sideTex });
+      if (!frigo) this.onTruckMaterials?.({ sideMat, paint });
+      box(8, 0.08, 2.5, interior, cx, 1.19, 0, body);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(8, 0.08, 2.5), [shell, shell, shell, interior, shell, shell]);
+      roof.position.set(cx, 3.71, 0); roof.castShadow = true; body.add(roof);
+      box(0.08, 2.6, 2.5, shell, -1.86, cy, 0, body);
+      const rWall = new THREE.Mesh(new THREE.BoxGeometry(8, 2.6, 0.06), [shell, shell, shell, shell, sideMat, interior]);
+      rWall.position.set(cx, cy, 1.22); rWall.castShadow = true; rWall.receiveShadow = true; body.add(rWall);
+      const lWall = new THREE.Mesh(new THREE.BoxGeometry(8, 2.6, 0.06), [shell, shell, shell, shell, interior, sideMat]);
+      lWall.position.set(cx, cy, -1.22); lWall.castShadow = true; body.add(lWall);
+      const post = frigo ? std('#c9cdd0', 0.5, 0.4) : std(t.firm.renk, 0.6, 0.3);
+      if (!frigo) post.color.multiplyScalar(0.7);
+      [[-1.9, 1.25], [-1.9, -1.25], [6.1, 1.25], [6.1, -1.25]].forEach(([x, z]) => box(0.14, 2.66, 0.14, post, x, cy, z, body));
+      box(8.1, 0.18, 2.56, post, cx, 1.15, 0, body);
+      box(0.12, 0.2, 2.56, post, 6.1, 3.7, 0, body);
+      const casting = std('#2b2f33', 0.7, 0.4);
+      [-1.93, 6.13].forEach((x) => [1.15, 3.75].forEach((y) => [-1.27, 1.27].forEach((z) => box(0.2, 0.16, 0.16, casting, x, y, z, body))));
+      pickables.push(rWall, lWall, roof);
+
+      if (frigo) {
+        // Soğutma ünitesi (kasanın önünde) + termograf (yanda, kameraya dönük)
+        const unitMat = std('#d4d8db', 0.45, 0.4), grillM = std('#2a2f33', 0.7, 0.4);
+        rbox(0.3, 1.7, 1.9, 0.06, unitMat, -2.05, 2.55, 0, body);
+        box(0.02, 1.2, 1.5, grillM, -2.21, 2.6, 0, body);
+        for (let i = 0; i < 6; i++) box(0.03, 0.04, 1.5, unitMat, -2.22, 2.1 + i * 0.2, 0, body);
+        if (t.temp != null) {
+          box(1.18, 0.62, 0.03, std('#20262b', 0.6, 0.3), -1.05, 2.0, 1.245, body);
+          thermo = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.55), new THREE.MeshBasicMaterial({ map: art.thermoTexture(t.temp), toneMapped: false }));
+          thermo.position.set(-1.05, 2.0, 1.262); body.add(thermo);
+        }
+      }
+
+      // Kapılar
+      [[1.25, -1], [-1.25, 1]].forEach(([hz, dir], i) => {
+        const hinge = new THREE.Group(); hinge.position.set(6.12, cy, hz); body.add(hinge);
+        const dm = frigo ? std('#e4e7e5', 0.45, 0.15) : std('#ffffff', 0.6, 0.2, { map: art.containerDoor(t.firm, t.code, i === 0) });
+        const door = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.56, 1.24), [dm, interior, shell, shell, shell, shell]);
+        door.position.set(0, 0, dir * 0.62); door.castShadow = true; hinge.add(door);
+        [0.3, 0.85].forEach((o) => { const r = cyl(0.035, 0.035, 2.5, 6, chrome, hinge); r.position.set(0.07, 0, dir * o); });
+        box(0.08, 0.12, 0.3, chrome, 0.09, -0.3, dir * 0.95, hinge);
+        hinge.userData.dir = dir;
+        doors.push(hinge); pickables.push(door);
+      });
+
+      // Yük: kuru yükte paletli çuvallar, frigoda streçlenmiş koli paletleri
+      const n = Math.min(t.cargo.tons, 24);
+      const sackMat = frigo ? null : std('#ffffff', 0.95, 0, { map: art.sackTexture(t.cargo.product) });
+      let cartonMat = null, wrapMat = null;
+      if (frigo) {
+        const ct = art.cartonTexture(t.cargo.product).clone(); ct.wrapS = ct.wrapT = THREE.RepeatWrapping; ct.repeat.set(2, 2); ct.needsUpdate = true;
+        cartonMat = std('#ffffff', 0.85, 0, { map: ct });
+        wrapMat = new THREE.MeshStandardMaterial({ color: '#e8f2f6', roughness: 0.15, metalness: 0, transparent: true, opacity: 0.22, depthWrite: false });
+      }
+      for (let i = 0; i < n; i++) {
+        const depth = Math.floor(i / 4), level = Math.floor((i % 4) / 2), side = i % 2;
+        const pr = unit(5.45 - depth * 1.15, 1.75 + level * 1.06, side ? 0.58 : -0.58, 1.05, 1.02, 1.08);
+        pr.rotation.y = (Math.random() - 0.5) * 0.06;
+        pallet(pr, 1.02);
+        if (frigo) {
+          box(1.0, 0.86, 1.04, cartonMat, 0, 0.07, 0, pr);
+          box(1.03, 0.88, 1.07, wrapMat, 0, 0.07, 0, pr).castShadow = false;
+        } else {
+          for (let lv = 0; lv < 3; lv++) for (let k = 0; k < 2; k++) {
+            const sk = rbox(0.5, 0.27, 1.0, 0.1, sackMat, (k ? 0.26 : -0.26) + (lv % 2 ? 0.02 : -0.02), -0.29 + lv * 0.28, 0, pr);
+            sk.rotation.y = (Math.random() - 0.5) * 0.08;
+          }
+        }
+      }
+    }
 
     // Tekerlekler
     const wheels = [];
@@ -867,7 +943,7 @@ export class World {
     }
 
     g.traverse((o) => { if (o.isMesh) o.userData.truck = true; });
-    return { group: g, body, doors, wheels, crates: crateMeshes, lamp, exhaust, pickables, opened: false };
+    return { group: g, body, doors, wheels, crates: crateMeshes, lamp, exhaust, pickables, thermo, kasa, opened: false };
   }
 
   // ---------------- Kamyon olayları ----------------
@@ -911,6 +987,7 @@ export class World {
   async openDoors() {
     const T = this.truck; if (!T || T.opened) return;
     T.opened = true;
+    if (!T.doors.length) return; // açık platform: açılacak kapı yok
     tween(1.0, (k) => { T.lamp.intensity = 3.2 * k; }, Ease.outCubic);
     await tween(1.1, (k) => {
       T.doors.forEach((h) => { h.rotation.y = -h.userData.dir * 0.9 * Math.PI * k * -1; });
@@ -996,7 +1073,7 @@ export class World {
     const hit = this.raycaster.intersectObjects(targets, false)[0];
     if (!hit) return this.setHover(null);
     if (this.truck.opened) this.setHover({ type: 'crate', obj: hit.object, product: hit.object.userData.product });
-    else this.setHover({ type: 'container' });
+    else this.setHover({ type: 'container', kasa: this.truck.kasa });
   }
 
   setHover(h) {

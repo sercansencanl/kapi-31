@@ -321,6 +321,9 @@ function paperBase(g, w, h, color) {
 }
 const fmtN = (n) => Number(n).toLocaleString('tr-TR', { maximumFractionDigits: 1 });
 
+const KASA_AD = { frigo: 'Frigo, en çok +4 °C', kuru: 'Kuru yük', acik: 'Açık platform' };
+export const kasaLine = (p) => KASA_AD[p.kasa] || 'Kuru yük';
+
 export function manifestTexture(t) {
   const W = 720, H = 960;
   const [c, g] = cv(W, H);
@@ -335,9 +338,10 @@ export function manifestTexture(t) {
     ['Plaka', t.plate], ['Firma', t.firm.ad], ['Sürücü', t.driver],
     ['Çıkış', `${t.origin.sehir}, ${t.origin.km} km`], ['Araç', t.manifest.vehicle.ad],
     ['Yük', t.manifest.product.ad, true], ['Miktar', `${t.manifest.tons} ton`, true], ['Konteyner', t.code],
+    ['Kasa', kasaLine(t.manifest.product)],
   ];
   rows.forEach(([k, v, hl], i) => {
-    const y = 190 + i * 88;
+    const y = 180 + i * 84;
     if (hl) { g.fillStyle = 'rgba(240,185,40,0.38)'; g.fillRect(220, y - 18, W - 264, 26); }
     g.fillStyle = '#7a7f84'; g.font = `500 32px ${UI_FONT}`; g.fillText(k, 44, y);
     g.fillStyle = '#22309a'; g.font = `700 38px ${TYPE_FONT}`; g.fillText(v, 220, y);
@@ -469,6 +473,74 @@ export function grilleTexture() {
   g.strokeStyle = '#cfd5da'; g.lineWidth = 12; g.strokeRect(6, 6, 244, 244);
   g.fillStyle = '#e4e8eb'; g.beginPath(); g.roundRect(98, 108, 60, 40, 8); g.fill();
   g.fillStyle = '#16191c'; g.font = `700 26px ${UI_FONT}`; g.textAlign = 'center'; g.fillText('K31', 128, 137);
+  return tex(c);
+}
+
+// ---------- Yük tipleri ----------
+// Çuval (pirinç, buğday, gübre, çimento): dokuma dokusu, dikiş, ürün baskısı
+const sackCache = new Map();
+export function sackTexture(product) {
+  if (sackCache.has(product.id)) return sackCache.get(product.id);
+  const [c, g] = cv(256, 256);
+  const base = { cimento: '#cbbf9c', gubre: '#e8e6dc', pirinc: '#efe8d4', bugday: '#d9c79a' }[product.id] || '#e6dcc4';
+  g.fillStyle = base; g.fillRect(0, 0, 256, 256);
+  for (let y = 0; y < 256; y += 4) { g.fillStyle = 'rgba(0,0,0,0.05)'; g.fillRect(0, y, 256, 1.5); }
+  for (let x = 0; x < 256; x += 4) { g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(x, 0, 1.5, 256); }
+  g.strokeStyle = 'rgba(60,45,30,0.5)'; g.setLineDash([6, 5]); g.lineWidth = 3;
+  g.beginPath(); g.moveTo(0, 14); g.lineTo(256, 14); g.moveTo(0, 242); g.lineTo(256, 242); g.stroke(); g.setLineDash([]);
+  g.fillStyle = product.renk; g.fillRect(0, 26, 256, 22);
+  drawIcon(g, product.id, 128, 120, 92, '#2a2f33', base);
+  g.fillStyle = '#2a2f33'; g.font = `700 34px ${UI_FONT}`; g.textAlign = 'center'; g.fillText(product.ad.toUpperCase(), 128, 205);
+  g.font = `600 20px ${UI_FONT}`; g.fillText('50 KG', 128, 228);
+  const t = tex(c); sackCache.set(product.id, t); return t;
+}
+
+// Frigo kolisi: karton, soğuk zincir ikonu, ürün etiketi
+const cartonCache = new Map();
+export function cartonTexture(product) {
+  if (cartonCache.has(product.id)) return cartonCache.get(product.id);
+  const [c, g] = cv(256, 256);
+  g.fillStyle = '#c7a477'; g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(90,60,30,${Math.random() * 0.06})`; g.fillRect(0, Math.random() * 256, 256, 2); }
+  g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(118, 0, 20, 256); // bant
+  g.fillStyle = '#f6f3ea'; g.fillRect(36, 54, 184, 150);
+  g.fillStyle = product.renk; g.fillRect(36, 54, 184, 24);
+  drawIcon(g, product.id, 96, 132, 70, '#1d2830', '#f6f3ea');
+  // kar tanesi = soğuk zincir
+  g.strokeStyle = '#2b6fae'; g.lineWidth = 5; g.lineCap = 'round';
+  for (let k = 0; k < 3; k++) { const a = k * Math.PI / 3; g.beginPath(); g.moveTo(170 - Math.cos(a) * 22, 128 - Math.sin(a) * 22); g.lineTo(170 + Math.cos(a) * 22, 128 + Math.sin(a) * 22); g.stroke(); }
+  g.fillStyle = '#1d2830'; g.font = `700 26px ${UI_FONT}`; g.textAlign = 'center'; g.fillText(product.ad, 128, 192);
+  g.fillStyle = '#2b6fae'; g.font = `700 18px ${UI_FONT}`; g.fillText('+2 / +4 °C SAKLAYIN', 128, 236);
+  const t = tex(c); cartonCache.set(product.id, t); return t;
+}
+
+// Frigo kasa yan yüzü: beyaz yalıtımlı panel, firma logosu, soğuk zincir şeridi
+export function reeferSide(firm, code) {
+  const [c, g] = cv(1536, 500);
+  g.fillStyle = '#eef0ee'; g.fillRect(0, 0, 1536, 500);
+  for (let x = 0; x < 1536; x += 96) { g.fillStyle = 'rgba(0,0,0,0.05)'; g.fillRect(x, 0, 3, 500); } // panel derzleri
+  for (let i = 0; i < 300; i++) { g.fillStyle = `rgba(80,70,60,${Math.random() * 0.03})`; g.fillRect(Math.random() * 1536, Math.random() * 500, Math.random() * 30, 3); }
+  const rust = g.createLinearGradient(0, 400, 0, 500); rust.addColorStop(0, 'rgba(110,80,50,0)'); rust.addColorStop(1, 'rgba(110,80,50,0.18)');
+  g.fillStyle = rust; g.fillRect(0, 400, 1536, 100);
+  g.fillStyle = firm.renk; g.fillRect(0, 430, 1536, 34);
+  g.fillStyle = '#2b6fae'; g.fillRect(0, 464, 1536, 10);
+  drawLogo(g, firm.logo, 380, 240, 150, firm.renk);
+  g.fillStyle = firm.renk; g.font = `700 140px ${UI_FONT}`; g.textBaseline = 'middle'; g.fillText(firm.ad, 490, 250);
+  g.fillStyle = '#2b6fae'; g.font = `600 42px ${UI_FONT}`; g.fillText('SOĞUK ZİNCİR · FRIGO', 490, 345);
+  g.fillStyle = '#3a4046'; g.font = `600 40px ${UI_FONT}`; g.fillText(code, 1180, 70);
+  return tex(c);
+}
+
+// Termograf ekranı: kasanın yanında, sıcaklığı gösterir (bilerek nötr renk)
+export function thermoTexture(temp) {
+  const [c, g] = cv(320, 160);
+  g.fillStyle = '#20262b'; g.beginPath(); g.roundRect(0, 0, 320, 160, 14); g.fill();
+  g.fillStyle = '#0c1012'; g.beginPath(); g.roundRect(14, 34, 292, 112, 8); g.fill();
+  g.fillStyle = '#a6b5bd'; g.font = `600 22px ${UI_FONT}`; g.fillText('TERMOGRAF', 18, 25);
+  g.fillStyle = '#8fd3ff'; g.shadowColor = '#8fd3ff'; g.shadowBlur = 14;
+  g.font = `700 86px ${UI_FONT}`; g.textAlign = 'right';
+  g.fillText(`${temp >= 0 ? '+' : ''}${String(temp).replace('.', ',')}`, 248, 122);
+  g.shadowBlur = 0; g.font = `700 36px ${UI_FONT}`; g.textAlign = 'left'; g.fillText('°C', 254, 120);
   return tex(c);
 }
 

@@ -1,5 +1,5 @@
 import { PRODUCTS, VEHICLES, RULES, CHECKS, CHOICE_LABEL } from './data.js';
-import { iconURL } from './art.js';
+import { iconURL, kasaLine } from './art.js';
 import { vehFactor } from './trucks.js';
 import { tween, Ease } from './feel.js';
 
@@ -50,6 +50,7 @@ export function showPapers(t, day) {
       <dt>Yük</dt><dd class="hl">${t.manifest.product.ad}</dd>
       <dt>Miktar</dt><dd class="hl">${t.manifest.tons} ton</dd>
       <dt>Konteyner</dt><dd>${t.code}</dd>
+      <dt>Kasa</dt><dd>${kasaLine(t.manifest.product)}</dd>
     </dl>`;
   if (t.hasDecl) {
     d.className = 'paper decl';
@@ -282,8 +283,8 @@ export function tip(h, p) {
   if (!h || !p || (h.type === 'desk' && !h.tip)) { el.hidden = true; return; }
   el.hidden = false;
   el.innerHTML = h.type === 'desk' ? `<span>${h.tip}</span>` : h.type === 'crate'
-    ? `<img src="${iconURL(h.product.id, '#1d2830', '#f6f3ea')}" alt=""><span>${h.product.ad}<small>1 sandık = 1 ton</small></span>`
-    : '<span>Kasayı aç<small>tıkla veya E</small></span>';
+    ? `<img src="${iconURL(h.product.id, '#1d2830', '#f6f3ea')}" alt=""><span>${h.product.ad}<small>${{ frigo: 'Frigo yükü', acik: 'Açık platform yükü' }[h.product.kasa] || 'Kuru yük'}</small></span>`
+    : `<span>${h.kasa === 'acik' ? 'Yüke bak' : 'Kasayı aç'}<small>tıkla veya E</small></span>`;
   // Sahnenin dışına taşmasın
   const host = el.parentElement, tw = el.offsetWidth, th = el.offsetHeight;
   let x = p.x + 16, y = p.y + 12;
