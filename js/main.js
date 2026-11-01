@@ -38,7 +38,8 @@ const COACH = {
   1: [
     { target: '3d:papers', text: 'Sürücü <b>manifestoyu</b> vezneden uzattı. Okumak için kağıda tıkla ya da Q tuşuna bas. Yük ve miktar satırlarını aklında tut.', waitFor: 'read' },
     { target: '3d:led', text: '<b>Kantar</b> kasadaki yükün gerçek ağırlığını ölçer. Manifestodaki miktarla aynı mı?' },
-    { target: '3d:inspect', text: 'Şimdi <b>kasayı aç</b> düğmesine bas. Sandıkların üzerinde ne yazdığına bak. Konteynere tıklayabilir ya da E tuşuna da basabilirsin.', waitFor: 'inspect' },
+    { target: '3d:inspect', text: 'Şimdi <b>kasayı aç</b> düğmesine bas. Konteynere tıklayabilir ya da E tuşuna da basabilirsin.', waitFor: 'inspect' },
+    { target: '#note-card', view: 'rear', dim: false, text: 'Sandıkların üzerine gelip ne yazdığına bak. Sol üstteki kart manifestoda ne yazdığını hatırlatır: <b>aynı mı?</b> Bakınca <b>Kabine dön</b>.', waitFor: 'back' },
     { target: '3d:tablet', text: '<b>Tablet</b> el kitabın: bugünün kuralları ve emisyon faktörleri. Her gün yeni kural eklenir.' },
     { target: '3d:buttons', text: 'Her şey tutuyorsa <b>geçiş ver</b>, bir tutarsızlık varsa <b>geri çevir</b> düğmesine bas. Klavyede 1 ve 3.' },
   ],
@@ -57,7 +58,10 @@ function coachShow(i) {
   const list = seq();
   if (i >= list.length || (day().no === 1 && !S.coachOn)) { S.coachIdx = -1; ui.coach(null); return; }
   const step = list[i];
-  const rect = step.target.startsWith('3d:') ? world.rectOf(step.target.slice(3)) : null;
+  // Hedef şu anki görünümde değilse (ör. kasadayken konsol) vurgulama: kutu ortada, karartma yok.
+  const here = (step.view || 'booth') === S.view;
+  const is3d = step.target.startsWith('3d:');
+  const rect = !here ? null : is3d ? world.rectOf(step.target.slice(3)) : document.querySelector(step.target)?.getBoundingClientRect() || null;
   ui.coach({ ...step, rect, count: `${i + 1} / ${list.length}` });
 }
 function coachEvent(name) {
@@ -394,6 +398,7 @@ async function inspect() {
       if (opening && world.truck) { await wait(0.45); audio.doorOpen(); await world.openDoors(); }
       else await wait(1.1);
       coachEvent('inspect');
+      if (S.coachIdx >= 0) coachShow(S.coachIdx);
     } else {
       S.view = 'booth';
       $('btn-back').hidden = true;
@@ -402,6 +407,8 @@ async function inspect() {
       await world.moveCam('booth', 0.9);
       ui.setInspect(true, 'Kasaya bak');
       setControls(S.phase === 'ready');
+      coachEvent('back');
+      if (S.coachIdx >= 0) coachShow(S.coachIdx); // vurguyu yeni görünüme göre yenile
     }
   } catch (err) {
     console.error('Kasa görünümü hatası:', err);

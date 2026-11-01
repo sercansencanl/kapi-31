@@ -264,10 +264,15 @@ export function tip(h, p) {
 export function coach(step) {
   const box = $('coach'), hole = $('coach-hole'), dim = $('coach-dim');
   if (!step) { box.hidden = true; hole.hidden = true; dim.hidden = true; return; }
-  const tr = step.rect || document.querySelector(step.target)?.getBoundingClientRect();
+  // Hedef yoksa ya da büyük kısmı ekran dışındaysa karartma yapma (oyuncu asla kilitli kalmasın).
+  let tr = step.rect;
+  if (tr) {
+    const vis = Math.max(0, Math.min(tr.bottom, innerHeight) - Math.max(tr.top, 0)) * Math.max(0, Math.min(tr.right, innerWidth) - Math.max(tr.left, 0));
+    if (vis < tr.width * tr.height * 0.5 || vis < 400) tr = null;
+  }
+  hole.hidden = !tr; dim.hidden = !tr || step.dim === false;
   if (tr) {
     const x1 = tr.left - 6, y1 = tr.top - 6, x2 = tr.right + 6, y2 = tr.bottom + 6;
-    hole.hidden = false; dim.hidden = false;
     Object.assign(hole.style, { left: x1 + 'px', top: y1 + 'px', width: x2 - x1 + 'px', height: y2 - y1 + 'px' });
     dim.style.clipPath = `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${x1}px ${y1}px, ${x1}px ${y2}px, ${x2}px ${y2}px, ${x2}px ${y1}px, ${x1}px ${y1}px)`;
   }
@@ -281,9 +286,13 @@ export function coach(step) {
   if (r) {
     const bh = box.offsetHeight;
     let top = r.top - bh - 14;
-    if (top < 12) top = Math.min(r.bottom + 14, window.innerHeight - bh - 12);
+    if (top < 12) top = r.bottom + 14;
     let left = r.left + r.width / 2 - bw / 2;
     left = Math.max(16, Math.min(left, window.innerWidth - bw - 16));
+    top = Math.max(12, Math.min(top, window.innerHeight - bh - 12)); // her zaman ekranda
     box.style.top = top + 'px'; box.style.left = left + 'px';
+  } else {
+    box.style.left = (window.innerWidth - bw) / 2 + 'px';
+    box.style.top = Math.max(12, window.innerHeight * 0.62 - box.offsetHeight / 2) + 'px';
   }
 }
