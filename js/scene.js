@@ -6,6 +6,18 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+// Yuvarlatılmış kutu (kabin, tampon gibi yumuşak hatlı parçalar için)
+const rgeoCache = new Map();
+function rbox(w, h, d, r, mat, x = 0, y = 0, z = 0, parent) {
+  const key = `${w}|${h}|${d}|${r}`;
+  if (!rgeoCache.has(key)) rgeoCache.set(key, new RoundedBoxGeometry(w, h, d, 3, r));
+  const m = new THREE.Mesh(rgeoCache.get(key), mat);
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
+  if (parent) parent.add(m);
+  return m;
+}
 
 // Son renk düzenlemesi: hafif kontrast, sıcak ışık / soğuk gölge ayrımı, vinyet ve ince film greni.
 const GradeShader = {
@@ -428,11 +440,14 @@ export class World {
 
   buildGround() {
     const s = this.scene;
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), std('#bdb4a6', 0.95));
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), std('#ffffff', 0.95, 0, { map: art.concreteTexture() }));
     ground.rotation.x = -Math.PI / 2; ground.position.z = -100; ground.receiveShadow = true; s.add(ground);
 
-    const lane = new THREE.Mesh(new THREE.PlaneGeometry(220, 8.2), std('#3b3d40', 0.9));
+    const lane = new THREE.Mesh(new THREE.PlaneGeometry(220, 8.2), std('#ffffff', 0.88, 0, { map: art.asphaltTexture() }));
     lane.rotation.x = -Math.PI / 2; lane.position.y = 0.02; lane.receiveShadow = true; s.add(lane);
+    // bordür taşları
+    const curb = std('#cfc9bd', 0.9);
+    [-4.2, 4.2].forEach((z) => box(220, 0.12, 0.35, curb, 0, 0.06, z, s));
     const white = std('#e8e6df', 0.8);
     [-3.75, 3.75].forEach((z) => {
       const l = new THREE.Mesh(new THREE.PlaneGeometry(220, 0.16), white);
@@ -447,10 +462,22 @@ export class World {
     [-1.86, 1.86].forEach((z) => box(12.4, 0.16, 0.2, hz, 1, 0.08, z, s));
 
     // Beton bariyerler
-    const conc = std('#a9a399', 0.95);
-    for (let x = -40; x <= 40; x += 3.3) {
+    // New Jersey profili: geniş taban, eğimli yanlar, dar tepe
+    const prof = new THREE.Shape();
+    prof.moveTo(-0.3, 0); prof.lineTo(0.3, 0); prof.lineTo(0.3, 0.08); prof.lineTo(0.2, 0.26);
+    prof.lineTo(0.1, 0.8); prof.lineTo(-0.1, 0.8); prof.lineTo(-0.2, 0.26); prof.lineTo(-0.3, 0.08); prof.closePath();
+    const jersey = new THREE.ExtrudeGeometry(prof, { depth: 3.0, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.015, bevelSegments: 1 });
+    { // UV: u = uzunluk boyunca, v = yükseklik (doku bandı yatay dursun)
+      const p = jersey.attributes.position, uv = jersey.attributes.uv;
+      for (let i = 0; i < p.count; i++) uv.setXY(i, p.getZ(i) / 3.0, p.getY(i) / 0.8);
+      uv.needsUpdate = true;
+    }
+    jersey.translate(0, 0, -1.5); jersey.rotateY(Math.PI / 2);
+    const conc = std('#ffffff', 0.92, 0, { map: art.barrierTexture() });
+    for (let x = -40; x <= 40; x += 3.15) {
       if (x > -3.5 && x < 0.5) continue;
-      box(3.0, 0.8, 0.55, conc, x, 0.4, -5.4, s);
+      const b = new THREE.Mesh(jersey, conc); b.position.set(x, 0, -5.4); b.rotation.y = (Math.random() - 0.5) * 0.03;
+      b.castShadow = true; b.receiveShadow = true; s.add(b);
     }
     // Aydınlatma direkleri
     const pole = std('#5d666d', 0.5, 0.6);
@@ -626,25 +653,49 @@ export class World {
     const interior = std('#4a4740', 0.9, 0.1);
     const v = t.vehicle.id;
 
-    // Kabin (ön tarafı -X)
-    box(2.3, 2.3, 2.45, cabPaint, -3.35, 2.25, 0, body);
-    box(2.36, 0.6, 2.5, paint, -3.35, 1.25, 0, body);
-    box(0.05, 0.95, 2.1, glass, -4.51, 2.85, 0, body);
-    [-1.236, 1.236].forEach((z) => box(1.0, 0.75, 0.04, glass, -3.95, 2.85, z, body));
-    box(0.05, 0.75, 1.7, dark, -4.53, 1.75, 0, body);
-    for (let i = 0; i < 4; i++) box(0.06, 0.05, 1.6, chrome, -4.56, 1.5 + i * 0.17, 0, body);
-    const head = std('#fff3d2', 0.3, 0, { emissive: '#ffe9b8', emissiveIntensity: 7 });
-    [-0.88, 0.88].forEach((z) => box(0.06, 0.2, 0.46, head, -4.55, 1.28, z, body));
-    box(0.28, 0.32, 2.56, dark, -4.6, 0.92, 0, body);
-    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.21), new THREE.MeshStandardMaterial({ map: art.plateTexture(t.plate), roughness: 0.5 }));
-    plate.rotation.y = -Math.PI / 2; plate.position.set(-4.75, 0.93, 0); body.add(plate);
-    const defl = box(1.5, 0.5, 2.3, cabPaint, -2.95, 3.62, 0, body); defl.rotation.z = 0.2;
-    box(1.1, 0.12, 2.5, paint, -3.6, 3.43, 0, body); // güneşlik
+    // Kabin (ön tarafı -X): yuvarlatılmış gövde, firma renginde alt etek
+    rbox(2.3, 2.3, 2.45, 0.14, cabPaint, -3.35, 2.25, 0, body);
+    rbox(2.38, 0.62, 2.52, 0.08, paint, -3.35, 1.27, 0, body);
+    // Ön cam: koyu çerçeve + hafif öne eğik cam
+    rbox(0.08, 1.06, 2.22, 0.05, dark, -4.47, 2.86, 0, body);
+    const ws = box(0.04, 0.94, 2.08, glass, -4.5, 2.86, 0, body); ws.rotation.z = -0.04;
+    box(0.03, 0.9, 0.04, dark, -4.52, 2.86, 0, body); // orta direk
+    // Yan camlar ve kapı detayları
     [-1, 1].forEach((sd) => {
-      box(0.35, 0.05, 0.05, dark, -4.3, 2.9, sd * 1.36, body);
-      box(0.1, 0.48, 0.22, dark, -4.2, 2.8, sd * 1.52, body);
-      box(1.7, 0.1, 0.03, paint, -3.4, 1.9, sd * 1.24, body); // kapı şeridi
+      rbox(1.08, 0.8, 0.05, 0.03, dark, -3.95, 2.86, sd * 1.226, body);
+      box(1.0, 0.72, 0.03, glass, -3.95, 2.86, sd * 1.24, body);
+      box(0.012, 1.55, 0.03, dark, -3.35, 2.15, sd * 1.24, body);        // kapı aralığı
+      box(0.16, 0.05, 0.05, chrome, -3.52, 2.3, sd * 1.255, body);       // kapı kolu
+      box(1.7, 0.1, 0.03, paint, -3.4, 1.9, sd * 1.245, body);           // kapı şeridi
+      // basamaklar
+      box(0.5, 0.05, 0.28, chrome, -3.6, 0.9, sd * 1.32, body);
+      box(0.5, 0.05, 0.22, chrome, -3.6, 0.55, sd * 1.3, body);
+      // ayna kolu + ayna
+      box(0.32, 0.04, 0.04, dark, -4.32, 2.95, sd * 1.36, body);
+      rbox(0.1, 0.52, 0.24, 0.04, dark, -4.22, 2.82, sd * 1.53, body);
+      box(0.012, 0.44, 0.18, std('#9fb4c0', 0.05, 0.9), -4.275, 2.82, sd * 1.53, body);
     });
+    // Izgara, farlar, tampon
+    const grille = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.78), std('#ffffff', 0.35, 0.7, { map: art.grilleTexture() }));
+    grille.rotation.y = -Math.PI / 2; grille.position.set(-4.53, 1.76, 0); body.add(grille);
+    const head = std('#fff3d2', 0.3, 0, { emissive: '#ffe9b8', emissiveIntensity: 7 });
+    const lens = std('#cfd8de', 0.05, 0.6);
+    [-0.9, 0.9].forEach((z) => {
+      rbox(0.1, 0.26, 0.5, 0.04, dark, -4.52, 1.3, z, body);
+      box(0.04, 0.18, 0.4, head, -4.56, 1.3, z, body);
+      box(0.03, 0.06, 0.16, std('#f0a020', 0.4, 0, { emissive: '#ff9a1a', emissiveIntensity: 1.5 }), -4.57, 1.3, z + Math.sign(z) * 0.32, body); // sinyal
+    });
+    rbox(0.32, 0.34, 2.6, 0.08, dark, -4.6, 0.92, 0, body);                // tampon
+    [-0.95, 0.95].forEach((z) => { const f = cyl(0.07, 0.07, 0.04, 14, lens, body); f.rotation.z = Math.PI / 2; f.position.set(-4.77, 0.92, z); });
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.21), new THREE.MeshStandardMaterial({ map: art.plateTexture(t.plate), roughness: 0.5 }));
+    plate.rotation.y = -Math.PI / 2; plate.position.set(-4.77, 0.93, 0); body.add(plate);
+    // Tavan: rüzgar deflektörü, güneşlik, turuncu işaret lambaları
+    const defl = rbox(1.5, 0.5, 2.3, 0.12, cabPaint, -2.95, 3.62, 0, body); defl.rotation.z = 0.2;
+    rbox(1.1, 0.12, 2.5, 0.04, paint, -3.6, 3.43, 0, body);
+    const marker = std('#ffb347', 0.4, 0, { emissive: '#ff9a1a', emissiveIntensity: 3.5 });
+    for (let i = 0; i < 5; i++) box(0.06, 0.06, 0.12, marker, -4.13, 3.52, -0.8 + i * 0.4, body);
+    // Yakıt deposu/yan etek (dizel deposu ayrıca eklenir) ve hava tankı
+    [-1, 1].forEach((sd) => { const at = cyl(0.14, 0.14, 0.9, 12, chrome, body); at.rotation.z = Math.PI / 2; at.position.set(-1.6, 0.85, sd * 0.68); });
 
     // Şasi
     box(10.5, 0.3, 1.0, dark, 0.75, 0.9, 0, body);
@@ -665,6 +716,8 @@ export class World {
     [[-1.9, 1.25], [-1.9, -1.25], [6.1, 1.25], [6.1, -1.25]].forEach(([x, z]) => box(0.14, 2.66, 0.14, post, x, cy, z, body));
     box(8.1, 0.18, 2.56, post, cx, 1.15, 0, body);
     box(0.12, 0.2, 2.56, post, 6.1, 3.7, 0, body);
+    const casting = std('#2b2f33', 0.7, 0.4);
+    [-1.93, 6.13].forEach((x) => [1.15, 3.75].forEach((y) => [-1.27, 1.27].forEach((z) => box(0.2, 0.16, 0.16, casting, x, y, z, body))));
     const pickables = [rWall, lWall, roof];
 
     // Kapılar
@@ -701,12 +754,20 @@ export class World {
 
     // Tekerlekler
     const wheels = [];
-    const tire = std('#161718', 0.9), hub = std('#b9bfc4', 0.3, 0.8);
+    const tire = std('#161718', 0.9), hub = std('#b9bfc4', 0.3, 0.8), hubDark = std('#3a3f44', 0.6, 0.5);
+    const tireGeo = new THREE.TorusGeometry(0.4, 0.13, 10, 28); // yuvarlak lastik omzu
     [-3.5, 3.6, 4.8].forEach((x) => [-1.08, 1.08].forEach((z) => {
       const w = new THREE.Group(); w.position.set(x, 0.52, z); g.add(w);
-      const tm = cyl(0.52, 0.52, 0.42, 20, tire, w); tm.rotation.x = Math.PI / 2;
-      const hm = cyl(0.26, 0.26, 0.44, 10, hub, w); hm.rotation.x = Math.PI / 2;
-      box(0.1, 0.36, 0.45, hub, 0, 0, 0, w);
+      const tm = cyl(0.5, 0.5, 0.34, 28, tire, w); tm.rotation.x = Math.PI / 2;
+      [-0.12, 0.12].forEach((o) => { const tr = new THREE.Mesh(tireGeo, tire); tr.position.z = o; tr.castShadow = true; w.add(tr); });
+      const hm = cyl(0.27, 0.27, 0.38, 20, hub, w); hm.rotation.x = Math.PI / 2;
+      const hc = cyl(0.1, 0.12, 0.42, 12, hubDark, w); hc.rotation.x = Math.PI / 2;
+      const side = Math.sign(z);
+      for (let k = 0; k < 8; k++) { // bijonlar
+        const a = (k / 8) * Math.PI * 2;
+        const nut = cyl(0.022, 0.022, 0.03, 6, hubDark, w); nut.rotation.x = Math.PI / 2;
+        nut.position.set(Math.cos(a) * 0.18, Math.sin(a) * 0.18, side * 0.2);
+      }
       wheels.push(w);
     }));
     [3.6, 4.8].forEach((x) => box(1.3, 0.06, 2.6, dark, x, 1.1, 0, body)); // çamurluk
@@ -725,7 +786,7 @@ export class World {
         [-0.8, 0.8].forEach((o) => { const b = cyl(0.44, 0.44, 0.1, 18, std('#ffffff', 0.5), body); b.rotation.z = Math.PI / 2; b.position.set(0.3 + o, 0.9, z); });
       });
     } else {
-      const bm = std('#2a2f34', 0.5, 0.4), glow = std('#4ade80', 0.4, 0, { emissive: '#3ddc84', emissiveIntensity: 5 });
+      const bm = std('#2a2f34', 0.5, 0.4), glow = std('#4ade80', 0.4, 0, { emissive: '#3ddc84', emissiveIntensity: 3.2 });
       [-1, 1].forEach((sd) => {
         box(2.8, 0.62, 0.42, bm, 0.3, 0.9, sd * 0.98, body);
         box(2.8, 0.07, 0.02, glow, 0.3, 1.0, sd * 1.2, body);

@@ -376,6 +376,102 @@ export function labelTexture(text, sub, color = '#f2efe6', ink = '#1d2830') {
   return tex(c);
 }
 
+// ---------- Zemin ve çevre dokuları ----------
+function speckle(g, w, h, n, alpha, light = 0.5) {
+  for (let i = 0; i < n; i++) {
+    g.fillStyle = Math.random() < light ? `rgba(255,255,255,${Math.random() * alpha})` : `rgba(0,0,0,${Math.random() * alpha})`;
+    const s = 1 + Math.random() * 2.5; g.fillRect(Math.random() * w, Math.random() * h, s, s);
+  }
+}
+
+// Asfalt şerit: agrega, yamalar, çatlaklar, yağ lekeleri ve teker izleri. Uzunluk boyunca tekrarlar.
+export function asphaltTexture() {
+  const W = 1024, H = 256;
+  const [c, g] = cv(W, H);
+  g.fillStyle = '#3d3f42'; g.fillRect(0, 0, W, H);
+  speckle(g, W, H, 26000, 0.12, 0.45);
+  // teker izleri: iki koyu, cilalı bant
+  [0.3, 0.7].forEach((p) => {
+    const y = p * H, grad = g.createLinearGradient(0, y - 30, 0, y + 30);
+    grad.addColorStop(0, 'rgba(0,0,0,0)'); grad.addColorStop(0.5, 'rgba(0,0,0,0.22)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad; g.fillRect(0, y - 30, W, 60);
+  });
+  // yamalar
+  for (let i = 0; i < 4; i++) {
+    g.fillStyle = `rgba(${Math.random() < 0.5 ? '20,20,22' : '80,80,82'},0.25)`;
+    g.fillRect(Math.random() * W, Math.random() * H, 60 + Math.random() * 140, 30 + Math.random() * 60);
+  }
+  // yağ lekeleri (orta hatta, kamyonların durduğu yerde yoğun)
+  for (let i = 0; i < 14; i++) {
+    const x = Math.random() * W, y = H * (0.35 + Math.random() * 0.3), r = 6 + Math.random() * 26;
+    const rg = g.createRadialGradient(x, y, 0, x, y, r);
+    rg.addColorStop(0, 'rgba(10,8,6,0.45)'); rg.addColorStop(1, 'rgba(10,8,6,0)');
+    g.fillStyle = rg; g.beginPath(); g.ellipse(x, y, r * 1.6, r, 0, 0, Math.PI * 2); g.fill();
+  }
+  // çatlaklar
+  g.strokeStyle = 'rgba(15,15,16,0.55)'; g.lineWidth = 1.4;
+  for (let i = 0; i < 10; i++) {
+    let x = Math.random() * W, y = Math.random() * H;
+    g.beginPath(); g.moveTo(x, y);
+    for (let k = 0; k < 8; k++) { x += (Math.random() - 0.3) * 22; y += (Math.random() - 0.5) * 16; g.lineTo(x, y); }
+    g.stroke();
+  }
+  return tex(c, [20, 1]);
+}
+
+// Liman sahası: dökme beton plakalar, derz çizgileri, lekeler.
+export function concreteTexture() {
+  const S = 512;
+  const [c, g] = cv(S, S);
+  g.fillStyle = '#b9b2a6'; g.fillRect(0, 0, S, S);
+  speckle(g, S, S, 14000, 0.08, 0.5);
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { // plaka ton farkı
+    g.fillStyle = `rgba(${Math.random() < 0.5 ? '0,0,0' : '255,255,255'},${Math.random() * 0.05})`;
+    g.fillRect(i * 128, j * 128, 128, 128);
+  }
+  g.strokeStyle = 'rgba(60,55,48,0.45)'; g.lineWidth = 2;
+  for (let i = 0; i <= 4; i++) { g.beginPath(); g.moveTo(i * 128, 0); g.lineTo(i * 128, S); g.stroke(); g.beginPath(); g.moveTo(0, i * 128); g.lineTo(S, i * 128); g.stroke(); }
+  for (let i = 0; i < 6; i++) { // pas/su lekeleri
+    const x = Math.random() * S, y = Math.random() * S, r = 20 + Math.random() * 50;
+    const rg = g.createRadialGradient(x, y, 0, x, y, r);
+    rg.addColorStop(0, 'rgba(90,70,45,0.18)'); rg.addColorStop(1, 'rgba(90,70,45,0)');
+    g.fillStyle = rg; g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  return tex(c, [70, 70]);
+}
+
+// Beton bariyer: kir, alt kısımda koyulaşma, reflektörlü bant.
+export function barrierTexture() {
+  const [c, g] = cv(256, 128);
+  g.fillStyle = '#b3ada2'; g.fillRect(0, 0, 256, 128);
+  speckle(g, 256, 128, 3000, 0.1, 0.5);
+  const gr = g.createLinearGradient(0, 70, 0, 128);
+  gr.addColorStop(0, 'rgba(60,50,40,0)'); gr.addColorStop(1, 'rgba(60,50,40,0.4)');
+  g.fillStyle = gr; g.fillRect(0, 70, 256, 58);
+  for (let i = 0; i < 8; i++) { // akıntı izleri
+    const x = Math.random() * 256; g.fillStyle = 'rgba(70,60,50,0.12)'; g.fillRect(x, 20, 3 + Math.random() * 4, 60 + Math.random() * 40);
+  }
+  // canvas y aşağı, UV v yukarı: bant tepeye yakın (v≈0.8) → canvas y≈25
+  g.fillStyle = '#e9b320'; g.fillRect(0, 18, 256, 12);
+  g.fillStyle = '#1b1b1b'; for (let x = -10; x < 270; x += 24) { g.beginPath(); g.moveTo(x, 30); g.lineTo(x + 10, 30); g.lineTo(x + 22, 18); g.lineTo(x + 12, 18); g.fill(); }
+  return tex(c, [1, 1]);
+}
+
+// Kabin ön ızgarası: krom çerçeve, yatay lameller, ortada logo yuvası.
+export function grilleTexture() {
+  const [c, g] = cv(256, 256);
+  g.fillStyle = '#16191c'; g.fillRect(0, 0, 256, 256);
+  for (let y = 14; y < 250; y += 20) {
+    const gr = g.createLinearGradient(0, y, 0, y + 12);
+    gr.addColorStop(0, '#9aa3aa'); gr.addColorStop(0.5, '#e4e8eb'); gr.addColorStop(1, '#6d757c');
+    g.fillStyle = gr; g.fillRect(14, y, 228, 10);
+  }
+  g.strokeStyle = '#cfd5da'; g.lineWidth = 12; g.strokeRect(6, 6, 244, 244);
+  g.fillStyle = '#e4e8eb'; g.beginPath(); g.roundRect(98, 108, 60, 40, 8); g.fill();
+  g.fillStyle = '#16191c'; g.font = `700 26px ${UI_FONT}`; g.textAlign = 'center'; g.fillText('K31', 128, 137);
+  return tex(c);
+}
+
 // Konsol yüzeyi: fırçalanmış, hafif aşınmış metal.
 export function brushedMetal() {
   const [c, g] = cv(512, 512);
