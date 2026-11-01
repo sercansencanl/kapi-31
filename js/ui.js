@@ -141,7 +141,7 @@ function renderForm(focusOpt) {
     ${full ? `<div class="ef-row"><span class="ef-lbl">Taşıma</span>${slot('km', 'km seç')}<span class="ef-op">÷ 100 ×</span>${slot('veh', 'araç seç')}<output class="ef-sub">${p2 != null ? fmt(p2) : '–'}</output></div>
     ${opts(['km', 'veh'])}` : ''}
     <div class="ef-total ${total != null ? 'done' : ''}"><span>Toplam</span><output aria-live="polite">${total != null ? fmt(total) : '–'}<small>t CO₂e</small></output></div>
-    <p class="ef-hint">${total != null ? `Beyandaki değerle karşılaştır. ${RULES.agirEsik} t üstü ağır yüktür.` : 'Boşluğa tıkla, değeri seç.'}</p>`;
+    <p class="ef-hint">${total != null ? `Beyandaki değerle karşılaştır. ${RULES.agirEsik} t üstü ağır yüktür.` : 'Boşluğu seç, sonra değeri seç.'}</p>`;
   if (focusOpt) el.querySelector('.ef-opt')?.focus({ preventScroll: true });
 }
 

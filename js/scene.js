@@ -71,10 +71,10 @@ const DESK_LAYOUT = {
     read: { manifest: [-0.27, -0.02, -0.8], decl: [0.05, -0.02, -0.8] }, // sağdaki el kitabı paneline yer bırak
   },
   narrow: {
-    s: 0.37,
-    manifest: [-0.14, -0.33, -0.04], decl: [0.15, -0.32, 0.05],
-    led: [-0.2, -0.56], tablet: [0.2, -0.56], inspect: [-0.27, 0.0],
-    onay: [-0.09, 0.0], vergi: [0.09, 0.0], ret: [0.27, 0.0],
+    s: 0.37, back: -0.68,
+    manifest: [-0.14, -0.36, -0.04], decl: [0.15, -0.35, 0.05],
+    led: [-0.2, -0.59], tablet: [0.2, -0.59], inspect: [-0.27, -0.07],
+    onay: [-0.09, -0.07], vergi: [0.09, -0.07], ret: [0.27, -0.07],
     read: { manifest: [0, 0.03, -0.72], decl: [0, -0.01, -0.7] },
   },
 };
@@ -141,7 +141,7 @@ export class World {
     this.renderer.setSize(w, h, false);
     this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
-    this.camera.fov = this.camera.aspect < 1.3 ? 52 : 38;
+    this.camera.fov = this.camera.aspect < 0.8 ? 66 : this.camera.aspect < 1.3 ? 52 : 38; // dik telefonda kamyon tam sığsın
     this.camera.updateProjectionMatrix();
     this.layoutDesk();
   }
@@ -187,9 +187,9 @@ export class World {
 
     const metal = std('#ffffff', 0.42, 0.5, { map: art.brushedMetal() }), dark = std('#1b2227', 0.7, 0.3);
     // Yüzey z: -0.5 (uzak, ekranın ortasına yakın) ile +0.6 (yakın, ekran dışı) arası
-    box(3.6, 0.06, 1.1, metal, 0, -0.03, 0.05, con);
-    box(3.6, 0.05, 0.04, dark, 0, 0.012, -0.5, con);   // arka kenar (pencere pervazı)
-    box(3.6, 0.5, 0.04, dark, 0, -0.25, -0.52, con);   // pervaz altı, kamyonla konsol arası
+    this.deskTop = box(3.6, 0.06, 1.1, metal, 0, -0.03, 0.05, con);
+    this.sill = box(3.6, 0.05, 0.04, dark, 0, 0.012, -0.5, con);   // arka kenar (pencere pervazı)
+    this.sillLow = box(3.6, 0.5, 0.04, dark, 0, -0.25, -0.52, con); // pervaz altı, kamyonla konsol arası
     this.deskMat = box(0.66, 0.003, 0.46, std('#ffffff', 0.9, 0, { map: art.blotter() }), 0, 0.0, 0, con);
     // Konsolun yakın kenarında kauçuk kol dayama
     const pad = cyl(0.025, 0.025, 3.6, 12, std('#20282d', 0.9, 0.1), con); pad.rotation.z = Math.PI / 2; pad.position.set(0, 0.02, 0.22);
@@ -270,6 +270,10 @@ export class World {
     const d = 1.25, hh = Math.tan((this.camera.fov * Math.PI) / 360) * d, hw = hh * this.camera.aspect;
     const L = this.camera.aspect >= 1.1 ? DESK_LAYOUT.wide : DESK_LAYOUT.narrow;
     this.layout = L;
+    // Dar ekranda masa daha derin: arka kenar geri çekilir, kantar ve tablet masanın üstünde kalır
+    const back = L.back ?? -0.5;
+    this.deskTop.scale.z = (0.6 - back) / 1.1; this.deskTop.position.z = (0.6 + back) / 2;
+    this.sill.position.z = back; this.sillLow.position.z = back - 0.02;
     const s = Math.max(0.5, Math.min(1.25, hw / L.s));
     this.con.scale.setScalar(s);
     this.con.position.set(0, (this.camera.aspect >= 1.1 ? -1.12 : -0.98) * hh, -d);

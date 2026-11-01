@@ -60,7 +60,8 @@ function coachShow(i) {
   S.coachIdx = i;
   const list = seq();
   if (i >= list.length || (day().no === 1 && !S.coachOn)) { S.coachIdx = -1; ui.coach(null); return; }
-  const step = list[i];
+  const step = { ...list[i] };
+  if (matchMedia('(pointer: coarse)').matches) step.text = step.text.replace(/ (ya da|Klavyede) [^.]*(tuşuna bas|[0-9] ve [0-9])[^.]*\./g, '.').replace(/tıkla/g, 'dokun').replace(/\.\./g, '.');
   // Hedef şu anki görünümde değilse (ör. kasadayken konsol) vurgulama: kutu ortada, karartma yok.
   const here = (step.view || 'booth') === S.view;
   const is3d = step.target.startsWith('3d:');
