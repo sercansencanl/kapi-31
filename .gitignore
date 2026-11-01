@@ -1,0 +1,3 @@
+# Organizasyonun bilgilendirme belgesi: herkese açık depoya koyulmuyor
+*.pdf
+.playwright-cli/

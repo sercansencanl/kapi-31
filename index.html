@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kapı 31</title>
+<meta name="description" content="Antalya Limanı, 2031. Karbon sınır kapısında denetçisin: belgeyi oku, kasayı aç, emisyonu hesapla.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%231f3a4c'/%3E%3Ctext x='16' y='23' font-family='Arial' font-weight='700' font-size='17' text-anchor='middle' fill='%23f2c230'%3E31%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Big+Shoulders+Stencil:wght@700;800&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div class="app">
+  <div class="stage" id="stage">
+    <canvas id="world" aria-label="Liman kapısı, üç boyutlu sahne"></canvas>
+
+    <header class="hud" id="hud" hidden>
+      <div class="hud-id">
+        <span class="hud-gate">Kapı 31</span>
+        <span id="hud-day">Gün 1</span>
+        <ol class="hud-trucks" id="hud-trucks" aria-label="Günün kamyonları"></ol>
+      </div>
+      <dl class="hud-meters">
+        <div><dt>Bugünkü kazancın</dt><dd id="m-wallet">0 ₺</dd></div>
+        <div><dt>Limandan geçen emisyon</dt><dd id="m-emission">0 t</dd></div>
+        <div><dt>Liman bütçesi</dt><dd id="m-budget">0 €</dd></div>
+      </dl>
+      <div class="hud-actions">
+        <button class="icon-btn" id="btn-help" aria-label="Rehberi göster">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1.1.9-1.1 1.6v.6"/><circle cx="12" cy="16.9" r=".6" class="fill"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-sound" aria-label="Sesi kapat" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" class="fill"/><path class="on" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="tip3d" id="tip3d" hidden></div>
+    <aside class="receipt" id="receipt" hidden aria-live="polite"></aside>
+    <div class="flash" id="flash" aria-hidden="true"></div>
+
+    <div class="book" id="book" hidden role="dialog" aria-label="El kitabı">
+      <div class="tabs" role="tablist" aria-label="El kitabı">
+        <button role="tab" id="t-rules" aria-selected="true" aria-controls="tab-rules" data-tab="rules">Kurallar</button>
+        <button role="tab" id="t-factors" aria-selected="false" aria-controls="tab-factors" data-tab="factors" tabindex="-1">Faktörler</button>
+        <button role="tab" id="t-calc" aria-selected="false" aria-controls="tab-calc" data-tab="calc" tabindex="-1">Emisyon formu <kbd>F</kbd></button>
+        <button class="book-close" id="book-close" aria-label="El kitabını kapat">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="tabpanel" id="tab-rules" role="tabpanel" aria-labelledby="t-rules"></div>
+      <div class="tabpanel" id="tab-factors" role="tabpanel" aria-labelledby="t-factors" hidden></div>
+      <div class="tabpanel" id="tab-calc" role="tabpanel" aria-labelledby="t-calc" hidden>
+        <div class="eform" id="eform"></div>
+      </div>
+    </div>
+
+    <button class="btn-back" id="btn-back" hidden>Kabine dön <kbd>E</kbd></button>
+    <aside class="note-card" id="note-card" hidden aria-live="polite"></aside>
+  </div>
+
+  <!-- Görsel masa 3D sahnede. Bu bölüm ekran okuyucu ve klavye kullanıcıları için duruyor. -->
+  <section class="desk sr-only" id="desk" aria-label="Denetim masası" hidden>
+    <div class="tray" id="tray">
+      <article class="paper manifest out" id="manifest" aria-label="Taşıma manifestosu"></article>
+      <article class="paper decl out" id="decl" aria-label="Karbon beyanı"></article>
+    </div>
+
+    <div class="instruments">
+      <div class="kantar" id="kantar">
+        <span class="k-label">Kantar</span>
+        <output id="kantar-val" data-state="idle" aria-live="polite">– –</output>
+        <span class="k-sub">net yük</span>
+      </div>
+      <button class="btn-inspect" id="btn-inspect" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="1"/><path d="M12 6v13M8 10v5M16 10v5"/></svg>
+        <span id="inspect-label">Kasayı aç</span><kbd>E</kbd>
+      </button>
+    </div>
+
+    <div class="decisions" id="decisions" role="group" aria-label="Karar">
+      <button class="dec dec-go" data-choice="onay" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
+        <span>Geçiş ver</span><kbd>1</kbd></button>
+      <button class="dec dec-tax" data-choice="vergi" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M14.5 9H11a1.75 1.75 0 0 0 0 3.5h2a1.75 1.75 0 0 1 0 3.5H9.5M12 7v1.8M12 15.2V17"/></svg>
+        <span>Vergi kes</span><kbd>2</kbd></button>
+      <button class="dec dec-no" data-choice="ret" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        <span>Geri çevir</span><kbd>3</kbd></button>
+    </div>
+  </section>
+</div>
+
+<div class="screen" id="screen" hidden><div class="screen-inner" id="screen-inner"></div></div>
+
+<div class="coach-dim" id="coach-dim" hidden aria-hidden="true"></div>
+<div class="coach-hole" id="coach-hole" hidden aria-hidden="true"></div>
+<div class="coach" id="coach" hidden role="dialog" aria-live="polite" aria-label="Rehber">
+  <span class="coach-count" id="coach-count"></span>
+  <p id="coach-text"></p>
+  <div class="coach-actions">
+    <button id="coach-skip" class="btn-quiet">Rehberi atla</button>
+    <button id="coach-next" class="btn-small">Devam</button>
+  </div>
+</div>
+
+<div class="loading" id="loading"><div><p>Liman yükleniyor</p><p class="loading-msg" id="loading-msg"></p></div></div>
+<script>
+  // Modül yüklenemezse ekranda takılı kalmak yerine nedenini göster.
+  (function () {
+    var msg = document.getElementById('loading-msg');
+    var show = function (t) { if (!document.getElementById('loading').hidden) msg.textContent = t; };
+    if (location.protocol === 'file:') {
+      show('Oyun dosyadan açılmış. Tarayıcı bu şekilde modül yüklemiyor. Klasördeki "oyunu-baslat.bat" dosyasına çift tıkla.');
+      return;
+    }
+    window.addEventListener('error', function (e) { show('Hata: ' + (e.message || 'bir dosya yüklenemedi') + '. İnternet bağlantını kontrol et ve sayfayı yenile.'); }, true);
+    window.addEventListener('unhandledrejection', function (e) { show('Hata: ' + (e.reason && e.reason.message || e.reason)); });
+    setTimeout(function () { show('Yükleme uzun sürüyor. İnternet bağlantını kontrol et (3D motoru jsDelivr\'den geliyor). Bağlantı varsa sayfada bir hata olabilir: F12 ile konsola bak.'); }, 12000);
+  })();
+</script>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
