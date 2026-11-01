@@ -8,12 +8,13 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Yuvarlatılmış kutu (kabin, tampon gibi yumuşak hatlı parçalar için)
 const rgeoCache = new Map();
-function rbox(w, h, d, r, mat, x = 0, y = 0, z = 0, parent) {
-  const key = `${w}|${h}|${d}|${r}`;
-  if (!rgeoCache.has(key)) rgeoCache.set(key, new RoundedBoxGeometry(w, h, d, 3, r));
+function rbox(w, h, d, r, mat, x = 0, y = 0, z = 0, parent, seg = 3) {
+  const key = `${w}|${h}|${d}|${r}|${seg}`;
+  if (!rgeoCache.has(key)) { const gq = new RoundedBoxGeometry(w, h, d, seg, r); gq.userData.shared = true; rgeoCache.set(key, gq); }
   const m = new THREE.Mesh(rgeoCache.get(key), mat);
   m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
   if (parent) parent.add(m);
@@ -58,6 +59,79 @@ function cyl(rt, rb, h, seg, mat, parent) {
   m.castShadow = true; m.receiveShadow = true;
   if (parent) parent.add(m);
   return m;
+}
+
+// ---------------- Performans: parçaları birleştirme ----------------
+// Her mesh ayrı bir çizim çağrısı demek. Aynı malzemeyi kullanan sabit parçalar tek geometride birleşir.
+// entries: [{ mesh, matrix }] (matrix: hedef koordinat sistemine göre). Başarısız malzeme grupları atlanır.
+function mergeByMaterial(entries) {
+  const byMat = new Map();
+  for (const e of entries) {
+    if (!byMat.has(e.mesh.material)) byMat.set(e.mesh.material, []);
+    byMat.get(e.mesh.material).push(e);
+  }
+  const out = [];
+  for (const [mat, list] of byMat) {
+    let geos = list.map(({ mesh, matrix }) => {
+      const g = mesh.geometry.clone();
+      for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k);
+      g.morphAttributes = {};
+      return g.applyMatrix4(matrix);
+    });
+    if (geos.some((g) => !g.index)) geos = geos.map((g) => (g.index ? g.toNonIndexed() : g));
+    let geo = null;
+    try { geo = mergeGeometries(geos, false); } catch { geo = null; }
+    geos.forEach((g) => g.dispose());
+    if (geo) out.push({ geo, mat, meshes: list.map((e) => e.mesh), cast: list.some((e) => e.mesh.castShadow), receive: list.some((e) => e.mesh.receiveShadow) });
+  }
+  return out;
+}
+
+// Bir grubun doğrudan çocuğu olan sabit meshleri malzemeye göre birleştirir (keep: dokunulmayacaklar).
+function compactStatic(parent, keep = new Set()) {
+  const meshes = parent.children.filter((o) => o.isMesh && !o.isInstancedMesh && !o.children.length && !keep.has(o)
+    && !Array.isArray(o.material) && o.material.visible !== false && o.visible);
+  const count = new Map();
+  meshes.forEach((m) => count.set(m.material, (count.get(m.material) || 0) + 1));
+  const entries = meshes.filter((m) => count.get(m.material) > 1).map((m) => { m.updateMatrix(); return { mesh: m, matrix: m.matrix }; });
+  for (const p of mergeByMaterial(entries)) {
+    p.meshes.forEach((m) => { parent.remove(m); if (!m.geometry.userData.shared) m.geometry.dispose(); });
+    const merged = new THREE.Mesh(p.geo, p.mat);
+    merged.castShadow = p.cast; merged.receiveShadow = p.receive;
+    parent.add(merged);
+  }
+}
+
+// Yük birimleri (palet, bobin, külçe) tek şablondan InstancedMesh ile çizilir: malzeme başına tek çizim çağrısı.
+// units: konumu/dönüşü taşıyan görünmez seçim kutuları (parent'ın çocukları).
+function instanceUnits(template, units, parent, cast) {
+  template.updateMatrixWorld(true);
+  const entries = [];
+  template.traverse((o) => { if (o.isMesh) entries.push({ mesh: o, matrix: o.matrixWorld }); });
+  const parts = mergeByMaterial(entries);
+  disposeTree(template, false);
+  return parts.map(({ geo, mat }) => {
+    const im = new THREE.InstancedMesh(geo, mat, units.length);
+    units.forEach((u, i) => { u.updateMatrix(); im.setMatrixAt(i, u.matrix); });
+    im.castShadow = cast; im.receiveShadow = true;
+    im.frustumCulled = false; // kamyonla birlikte hareket eder, sınır küresi hesaplamaya gerek yok
+    parent.add(im);
+    return im;
+  });
+}
+
+// Sahneden çıkan nesnenin GPU belleğini boşaltır (geometri, malzeme, doku).
+function disposeTree(root, materials = true) {
+  root.traverse((o) => {
+    if (o.isInstancedMesh) o.dispose();
+    if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
+    if (materials && o.material) {
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap']) m[k]?.dispose();
+        m.dispose();
+      }
+    }
+  });
 }
 
 // Kabin konsolu yerleşimi (konsol yerel koordinatı: x yatay, z eğim boyunca; negatif = yukarı/uzak).
@@ -173,6 +247,40 @@ export class World {
       console.warn('Efektler kapatıldı:', err);
       this.composer = null;
     }
+    // Kalite: ?kalite=0|1|2 ile sabitlenebilir; yoksa dokunmatik cihazda 1'den başlar ve FPS düşükse kendiliğinden iner.
+    const forced = new URLSearchParams(location.search).get('kalite');
+    this.qualityLocked = forced != null && forced !== '';
+    this.setQuality(this.qualityLocked ? Math.max(0, Math.min(2, Number(forced) || 0)) : matchMedia('(pointer: coarse)').matches ? 1 : 0);
+    this.perf = { wait: 4, ms: 0, n: 0 };
+  }
+
+  // 0: tüm efektler · 1: çözünürlük 1x, bloom ve alan derinliği kapalı, gölge 1024
+  // 2: efekt zinciri yok (doğrudan çizim + donanım kenar yumuşatma), deniz dalgası sabit
+  setQuality(level) {
+    this.quality = level;
+    const pr = level === 0 ? Math.min(window.devicePixelRatio, 1.5) : 1;
+    this.renderer.setPixelRatio(pr);
+    this.composer?.setPixelRatio(pr);
+    if (this.bloom) this.bloom.enabled = level === 0;
+    this.dofAllowed = level === 0;
+    if (this.dof && !this.dofAllowed) this.dof.enabled = false;
+    this.useComposer = !!this.composer && level < 2;
+    this.seaAnim = level < 2;
+    const size = level === 0 ? 2048 : 1024, sh = this.sun?.shadow;
+    if (sh && sh.mapSize.x !== size) { sh.mapSize.set(size, size); sh.map?.dispose(); sh.map = null; }
+    if (this.host) this.resize();
+  }
+
+  // Son birkaç saniyenin ortalama FPS'i düşükse kaliteyi bir kademe indirir (geri çıkmaz, titreme olmasın).
+  watchPerf(rawMs) {
+    const P = this.perf;
+    if (!P || this.qualityLocked || this.quality >= 2 || document.hidden || rawMs > 250) return;
+    if (P.wait > 0) { P.wait -= rawMs / 1000; return; }
+    P.ms += rawMs; P.n++;
+    if (P.ms < 3000) return;
+    const fps = (P.n * 1000) / P.ms;
+    P.ms = 0; P.n = 0;
+    if (fps < 42) { this.setQuality(this.quality + 1); P.wait = 2; console.info(`Kapı 31: ${fps.toFixed(0)} FPS, kalite ${this.quality}`); }
   }
 
   // ---------------- Kabin konsolu (kameraya bağlı 3D masa) ----------------
@@ -781,15 +889,20 @@ export class World {
     const woodMat = std('#ffffff', 0.85, 0, { map: art.woodTexture() });
     const proxyMat = new THREE.MeshBasicMaterial({ visible: false });
 
-    // Bir yük birimi: görünmez seçim kutusu + içinde görsel parçalar (üzerine gelince birlikte kalkar)
+    // Bir yük birimi: görünmez seçim kutusu. Görsel parçalar tek bir şablonda (tpl) kurulur ve
+    // tüm birimler için InstancedMesh ile çizilir; üzerine gelince kutu kalkar, örneği de onunla.
+    const proxyGeo = new Map();
     const unit = (x, y, z, w, h, d) => {
-      const pr = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), proxyMat);
+      const key = `${w}|${h}|${d}`;
+      if (!proxyGeo.has(key)) proxyGeo.set(key, new THREE.BoxGeometry(w, h, d));
+      const pr = new THREE.Mesh(proxyGeo.get(key), proxyMat);
       pr.position.set(x, y, z);
       pr.userData = { crate: true, baseY: y, product: t.cargo.product };
       body.add(pr); crateMeshes.push(pr);
       return pr;
     };
-    const pallet = (parent, h) => { const pl = box(1.05, 0.14, 1.08, woodMat, 0, -h / 2 + 0.07, 0, parent); pl.castShadow = false; };
+    const tpl = new THREE.Group();
+    const pallet = (h) => box(1.05, 0.14, 1.08, woodMat, 0, -h / 2 + 0.07, 0, tpl);
 
     if (kasa === 'acik') {
       // Açık platform (yassı uzun kasa): taban, ön koruma, yan dikmeler
@@ -803,26 +916,21 @@ export class World {
       if (t.cargo.product.id === 'celik') {
         // Rulo sac bobinleri: eksen boyuna, beşiklerde, kayışlı
         const coilMat = std('#8e989f', 0.32, 0.85), eyeMat = std('#2a2f33', 0.6, 0.5);
+        const c = cyl(0.74, 0.74, 1.25, 32, coilMat, tpl); c.rotation.z = Math.PI / 2;
+        [-0.63, 0.63].forEach((ox) => { const e = cyl(0.3, 0.3, 0.02, 24, eyeMat, tpl); e.rotation.z = Math.PI / 2; e.position.x = ox; });
+        [-0.62, 0.62].forEach((oz) => box(1.0, 0.18, 0.18, woodMat, 0, -0.68, oz, tpl));
+        const strap = new THREE.Mesh(new THREE.TorusGeometry(0.76, 0.025, 6, 32), strapMat); strap.rotation.y = Math.PI / 2; tpl.add(strap);
         const n = Math.max(3, Math.min(5, Math.ceil(t.cargo.tons / 6)));
-        for (let i = 0; i < n; i++) {
-          const x = 5.2 - i * (7.0 / n) - 0.2;
-          const pr = unit(x, 2.12, 0, 1.3, 1.5, 1.5);
-          const c = cyl(0.74, 0.74, 1.25, 32, coilMat, pr); c.rotation.z = Math.PI / 2;
-          [-0.63, 0.63].forEach((ox) => { const e = cyl(0.3, 0.3, 0.02, 24, eyeMat, pr); e.rotation.z = Math.PI / 2; e.position.x = ox; });
-          [-0.62, 0.62].forEach((oz) => box(1.0, 0.18, 0.18, woodMat, 0, -0.68, oz, pr));
-          const strap = new THREE.Mesh(new THREE.TorusGeometry(0.76, 0.025, 6, 32), strapMat); strap.rotation.y = Math.PI / 2; pr.add(strap);
-          pickables.push(c);
-        }
+        for (let i = 0; i < n; i++) pickables.push(unit(5.2 - i * (7.0 / n) - 0.2, 2.12, 0, 1.3, 1.5, 1.5));
       } else {
         // Alüminyum külçe istifleri: bantlı, aralıklı
         const ingot = std('#c6ced4', 0.3, 0.9), band = std('#2a2f33', 0.5, 0.4);
+        for (let k = 0; k < 4; k++) box(1.0, 0.13, 0.98, ingot, 0, -0.22 + k * 0.145, 0, tpl);
+        [-0.3, 0.3].forEach((bx) => box(0.04, 0.6, 1.0, band, bx, 0, 0, tpl));
         const n = Math.min(t.cargo.tons, 24);
         for (let i = 0; i < n; i++) {
           const depth = Math.floor(i / 4), level = Math.floor((i % 4) / 2), side = i % 2;
-          const pr = unit(5.4 - depth * 1.18, 1.75 + level * 0.62, side ? 0.6 : -0.6, 1.05, 0.58, 1.05);
-          for (let k = 0; k < 4; k++) box(1.0, 0.13, 0.98, ingot, 0, -0.22 + k * 0.145, 0, pr);
-          [-0.3, 0.3].forEach((bx) => box(0.04, 0.6, 1.0, band, bx, 0, 0, pr));
-          pickables.push(pr);
+          pickables.push(unit(5.4 - depth * 1.18, 1.75 + level * 0.62, side ? 0.6 : -0.6, 1.05, 0.58, 1.05));
         }
       }
     } else {
@@ -871,6 +979,7 @@ export class World {
         [0.3, 0.85].forEach((o) => { const r = cyl(0.035, 0.035, 2.5, 6, chrome, hinge); r.position.set(0.07, 0, dir * o); });
         box(0.08, 0.12, 0.3, chrome, 0.09, -0.3, dir * 0.95, hinge);
         hinge.userData.dir = dir;
+        compactStatic(hinge, new Set([door]));
         doors.push(hinge); pickables.push(door);
       });
 
@@ -883,22 +992,24 @@ export class World {
         cartonMat = std('#ffffff', 0.85, 0, { map: ct });
         wrapMat = new THREE.MeshStandardMaterial({ color: '#e8f2f6', roughness: 0.15, metalness: 0, transparent: true, opacity: 0.22, depthWrite: false });
       }
+      pallet(1.02);
+      if (frigo) {
+        box(1.0, 0.86, 1.04, cartonMat, 0, 0.07, 0, tpl);
+        box(1.03, 0.88, 1.07, wrapMat, 0, 0.07, 0, tpl);
+      } else {
+        for (let lv = 0; lv < 3; lv++) for (let k = 0; k < 2; k++) {
+          const sk = rbox(0.5, 0.27, 1.0, 0.1, sackMat, (k ? 0.26 : -0.26) + (lv % 2 ? 0.02 : -0.02), -0.29 + lv * 0.28, 0, tpl, 2);
+          sk.rotation.y = (Math.random() - 0.5) * 0.08;
+        }
+      }
       for (let i = 0; i < n; i++) {
         const depth = Math.floor(i / 4), level = Math.floor((i % 4) / 2), side = i % 2;
         const pr = unit(5.45 - depth * 1.15, 1.75 + level * 1.06, side ? 0.58 : -0.58, 1.05, 1.02, 1.08);
         pr.rotation.y = (Math.random() - 0.5) * 0.06;
-        pallet(pr, 1.02);
-        if (frigo) {
-          box(1.0, 0.86, 1.04, cartonMat, 0, 0.07, 0, pr);
-          box(1.03, 0.88, 1.07, wrapMat, 0, 0.07, 0, pr).castShadow = false;
-        } else {
-          for (let lv = 0; lv < 3; lv++) for (let k = 0; k < 2; k++) {
-            const sk = rbox(0.5, 0.27, 1.0, 0.1, sackMat, (k ? 0.26 : -0.26) + (lv % 2 ? 0.02 : -0.02), -0.29 + lv * 0.28, 0, pr);
-            sk.rotation.y = (Math.random() - 0.5) * 0.08;
-          }
-        }
       }
     }
+    // Kapalı kasanın içindeki yük güneş gölgesi düşüremez: gölge geçişinde çizilmesin.
+    const cargo = instanceUnits(tpl, crateMeshes, body, kasa === 'acik');
 
     // Tekerlekler
     const wheels = [];
@@ -916,6 +1027,7 @@ export class World {
         const nut = cyl(0.022, 0.022, 0.03, 6, hubDark, w); nut.rotation.x = Math.PI / 2;
         nut.position.set(Math.cos(a) * 0.18, Math.sin(a) * 0.18, side * 0.2);
       }
+      compactStatic(w); // 13 parça → 3 (lastik, jant, bijonlar)
       wheels.push(w);
     }));
     [3.6, 4.8].forEach((x) => box(1.3, 0.06, 2.6, dark, x, 1.1, 0, body)); // çamurluk
@@ -942,13 +1054,17 @@ export class World {
       });
     }
 
+    // Kabin, şasi, kasa çerçevesi gibi sabit parçalar malzeme başına tek mesh olur.
+    // Tıklanan/hareket eden parçalar (duvarlar, kapılar, termograf) ayrı kalır.
+    compactStatic(body, new Set([...pickables, thermo].filter(Boolean)));
+
     g.traverse((o) => { if (o.isMesh) o.userData.truck = true; });
-    return { group: g, body, doors, wheels, crates: crateMeshes, lamp, exhaust, pickables, thermo, kasa, opened: false };
+    return { group: g, body, doors, wheels, crates: crateMeshes, cargo, lamp, exhaust, pickables, thermo, kasa, opened: false };
   }
 
   // ---------------- Kamyon olayları ----------------
   async spawnTruck(t, onLevel) {
-    if (this.truck) this.scene.remove(this.truck.group);
+    if (this.truck) this.dropTruck();
     this.truck = this.buildTruck(t);
     const T = this.truck;
     T.group.position.x = 48;
@@ -1019,7 +1135,7 @@ export class World {
     await tween(3.2, (k) => {
       const x = -75 * k; this.rollWheels(x - prev); prev = x; T.group.position.x = x; onLevel?.(0.3 + k * 0.7);
     }, Ease.inCubic);
-    this.scene.remove(T.group); this.truck = null;
+    this.dropTruck(T);
     await tween(0.9, (k) => { this.barrier.rotation.x = 1.45 * (1 - k); }, Ease.inOutCubic);
   }
 
@@ -1029,7 +1145,16 @@ export class World {
     await tween(3.4, (k) => {
       const x = 55 * k; this.rollWheels(x - prev); prev = x; T.group.position.x = x; onLevel?.(0.3 + k * 0.5);
     }, Ease.inQuad);
-    this.scene.remove(T.group); this.truck = null;
+    this.dropTruck(T);
+  }
+
+  // Kamyonu sahneden çıkarır ve GPU belleğini boşaltır (yoksa her kamyonla bellek büyür).
+  dropTruck(T = this.truck) {
+    if (!T) return;
+    if (this.hover?.obj && T.crates.includes(this.hover.obj)) this.setHover(null);
+    this.scene.remove(T.group);
+    disposeTree(T.group);
+    if (this.truck === T) this.truck = null;
   }
 
   shake(a) { this.trauma.add(a); }
@@ -1094,6 +1219,7 @@ export class World {
   // ---------------- Döngü ----------------
   loop(now) {
     requestAnimationFrame((t) => this.loop(t));
+    this.watchPerf(now - this.last);
     let dt = Math.min((now - this.last) / 1000, 0.05);
     this.last = now;
     if (this.frozen > 0) { this.frozen -= dt; dt = 0; }
@@ -1102,7 +1228,7 @@ export class World {
     const t = this.time;
 
     // Deniz
-    if (this.sea && (this.frame = (this.frame || 0) + 1) % 2 === 0) {
+    if (this.sea && this.seaAnim && (this.frame = (this.frame || 0) + 1) % 2 === 0) {
       const pos = this.sea.geometry.attributes.position, b = this.seaBase;
       for (let i = 0; i < pos.count; i++) {
         const x = b[i * 3], y = b[i * 3 + 1];
@@ -1160,9 +1286,17 @@ export class World {
     }
 
     // Sandık hover
-    if (this.truck) for (const c of this.truck.crates) {
-      const target = c.userData.baseY + (c.userData.lift ? 0.07 : 0);
-      c.position.y += (target - c.position.y) * Math.min(1, dt * 14);
+    if (this.truck) {
+      const T = this.truck; let moved = false;
+      T.crates.forEach((c, i) => {
+        const target = c.userData.baseY + (c.userData.lift ? 0.07 : 0), dy = target - c.position.y;
+        if (Math.abs(dy) < 1e-4) return;
+        c.position.y += dy * Math.min(1, dt * 14);
+        c.updateMatrix();
+        for (const im of T.cargo) im.setMatrixAt(i, c.matrix);
+        moved = true;
+      });
+      if (moved) for (const im of T.cargo) im.instanceMatrix.needsUpdate = true;
     }
 
     // Kamera
@@ -1185,7 +1319,7 @@ export class World {
     this.animateLife(dt, t);
     this.onFrame?.(dt, t);
     if (this.dof) {
-      const want = settings.motion && (this.title || this.camView === 'rear');
+      const want = this.dofAllowed && settings.motion && (this.title || this.camView === 'rear');
       this.dof.enabled = want;
       if (want) {
         const f = this.camera.position.distanceTo(this.title ? this.titleTarget : this.cam.target);
@@ -1194,7 +1328,7 @@ export class World {
         u.aperture.value = this.title ? 0.00006 : 0.0009;
       }
     }
-    if (this.composer) {
+    if (this.useComposer) {
       this.grade.uniforms.time.value = (t * 60) % 1000;
       this.composer.render();
     } else this.renderer.render(this.scene, this.camera);

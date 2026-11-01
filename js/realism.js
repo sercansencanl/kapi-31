@@ -18,11 +18,14 @@ function loadTex(loader, file, { srgb = false, repeat = [1, 1], aniso = 8 } = {}
 
 // HDRI'deki en parlak noktayı (güneşi) ve ufuk rengini bul.
 function analyzeSky(tex) {
-  const { data, width: W, height: H } = tex.image;
+  const { data: raw, width: W, height: H } = tex.image;
+  // HalfFloatType'ta veri Uint16Array (yarım hassasiyet): yalnızca okunan değerler sayıya çevrilir
+  const fh = THREE.DataUtils.fromHalfFloat;
+  const at = raw instanceof Uint16Array ? (i) => fh(raw[i]) : (i) => raw[i];
   let best = -1, bc = 0, br = 0;
   for (let r = 0; r < H / 2; r += 2) {
     for (let c = 0; c < W; c += 2) {
-      const i = (r * W + c) * 4, l = data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722;
+      const i = (r * W + c) * 4, l = at(i) * 0.2126 + at(i + 1) * 0.7152 + at(i + 2) * 0.0722;
       if (l > best) { best = l; bc = c; br = r; }
     }
   }
@@ -30,7 +33,7 @@ function analyzeSky(tex) {
   const hz = [0, 0, 0]; let n = 0;
   const r0 = Math.floor(H * 0.47), r1 = Math.floor(H * 0.5);
   for (let r = r0; r < r1; r++) for (let c = 0; c < W; c += 4) {
-    const i = (r * W + c) * 4; hz[0] += data[i]; hz[1] += data[i + 1]; hz[2] += data[i + 2]; n++;
+    const i = (r * W + c) * 4; hz[0] += at(i); hz[1] += at(i + 1); hz[2] += at(i + 2); n++;
   }
   const u = (bc + 0.5) / W, v = 1 - (br + 0.5) / H; // flipY=true: satır 0 = v 1
   return { sunPhi: (u - 0.5) * Math.PI * 2, sunTheta: (v - 0.5) * Math.PI, horizon: hz.map((x) => x / n) };
@@ -42,7 +45,7 @@ export async function upgradeRealism(world, { onDone } = {}) {
   const maxA = Math.min(8, r.capabilities.getMaxAnisotropy());
   try {
     const [hdr, aDiff, aNor, aArm, cDiff, cNor, cArm, kNor, kArm, wNor] = await Promise.all([
-      new RGBELoader().setDataType(THREE.FloatType).loadAsync(SKY),
+      new RGBELoader().setDataType(THREE.HalfFloatType).loadAsync(SKY), // yarım hassasiyet: GPU belleği yarıya iner
       loadTex(tl, 'asphalt_02_diff_1k.jpg', { srgb: true, repeat: [55, 2], aniso: maxA }),
       loadTex(tl, 'asphalt_02_nor_gl_1k.jpg', { repeat: [55, 2], aniso: maxA }),
       loadTex(tl, 'asphalt_02_arm_1k.jpg', { repeat: [55, 2], aniso: maxA }),
