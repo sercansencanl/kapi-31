@@ -211,10 +211,13 @@ export function setInspect(enabled, label) {
 // ---------- Fiş ----------
 export function showReceipt({ ok, choice, t, effects, last, day }) {
   const r = $('receipt');
+  const STAMP = { onay: ['Geçiş', 'green'], vergi: ['Vergi', 'amber'], ret: ['Ret', 'red'] }[choice];
   const prodPart = `${t.cargo.tons} × ${t.cargo.product.faktor}`;
   const calc = !day.calc ? ''
     : `<p class="r-calc">${t.formula === 'tam' ? `${prodPart} + (${t.origin.km} ÷ 100) × ${num(vehFactor(t.vehicle, t.cargo.tons))}` : prodPart} = <b>${fmt(t.real)} t CO₂e</b></p>`;
   r.innerHTML = `
+    ${stampHTML(STAMP[0], STAMP[1], 0.25, -12)}
+    <p class="r-meta">Muayene fişi, ${t.plate}</p>
     <p class="r-head ${ok ? 'ok' : 'bad'}">${ok ? 'Doğru karar' : 'Hatalı karar'}</p>
     <p class="r-sub">Kararın: ${CHOICE_LABEL[choice]}.${ok ? '' : ` Doğrusu: ${CHOICE_LABEL[t.correct]}.`}</p>
     <p class="r-reason">${t.reason}</p>
@@ -223,6 +226,7 @@ export function showReceipt({ ok, choice, t, effects, last, day }) {
     <button class="btn-next" id="btn-next">${last ? 'Vardiyayı bitir' : 'Sonraki kamyon'} <kbd>Enter</kbd></button>`;
   r.hidden = false;
   r.classList.remove('show'); void r.offsetWidth; r.classList.add('show');
+  scheduleStampSounds(r);
   setTimeout(() => $('btn-next').focus({ preventScroll: true }), 50);
 }
 export function hideReceipt() { $('receipt').hidden = true; }
@@ -232,17 +236,45 @@ export function flash(kind) {
   f.className = 'flash'; void f.offsetWidth; f.classList.add(kind);
 }
 
+// ---------- Belge dili: antet ve damga ----------
+// Kurgusal Liman İdaresi amblemi (gerçek bir kurumun logosu değildir).
+export const EMBLEM = `<svg class="emblem" viewBox="0 0 48 48" aria-hidden="true">
+  <circle cx="24" cy="24" r="22" fill="none" stroke="currentColor" stroke-width="2.2"/>
+  <path d="M13 32c2.2 1.6 4.4 1.6 6.6 0s4.4-1.6 6.6 0 4.4 1.6 6.6 0M15 36.5c1.8 1.3 3.6 1.3 5.4 0s3.6-1.3 5.4 0 3.6 1.3 5.4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="24" y="27" text-anchor="middle" font-family="Big Shoulders Stencil, Barlow Condensed, sans-serif" font-weight="800" font-size="19" fill="currentColor">31</text>
+</svg>`;
+
+export const letterhead = (right) => `
+  <header class="letterhead">${EMBLEM}<span><b>Antalya Liman İdaresi</b><small>Karbon Sınır Denetim Birimi</small></span><em>${right}</em></header>`;
+
+// Lastik damga. delay saniye; tone: red | blue | green | amber
+export const stampHTML = (text, tone = 'red', delay = 0.5, rot = -9) =>
+  `<span class="stamp stamp-${tone}" style="--d:${delay}s;--r:${rot}deg">${text}</span>`;
+
 // ---------- Tam ekranlar ----------
+let stampTimers = [];
 export function screen(html, cls = '') {
   const s = $('screen');
   $('screen-inner').innerHTML = html;
   $('screen-inner').className = `screen-inner ${cls}`;
   s.hidden = false;
+  scheduleStampSounds($('screen-inner'));
   s.classList.remove('show'); void s.offsetWidth; s.classList.add('show');
   const btn = s.querySelector('[data-primary]');
   setTimeout(() => btn?.focus({ preventScroll: true }), 60);
 }
-export function hideScreen() { $('screen').hidden = true; }
+export function hideScreen() { $('screen').hidden = true; stampTimers.forEach(clearTimeout); stampTimers = []; }
+
+// Damgalar CSS ile basılır; vuruş sesi aynı anda çalsın diye ses tetikleyicisi dışarıdan verilir.
+let onStamp = () => {};
+export function setStampSound(fn) { onStamp = fn; }
+function scheduleStampSounds(root) {
+  stampTimers.forEach(clearTimeout); stampTimers = [];
+  root.querySelectorAll('.stamp').forEach((el) => {
+    const d = parseFloat(el.style.getPropertyValue('--d')) || 0;
+    stampTimers.push(setTimeout(onStamp, d * 1000 + 180));
+  });
+}
 
 // ---------- 3D ipucu ----------
 export function tip(h, p) {

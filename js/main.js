@@ -79,10 +79,12 @@ function titleScreen() {
     <p class="lede">Karbon Sınır Yönetmeliği'nin ilk haftası. Avrupa'ya giden her kamyon senin kapından geçiyor. Belgeyi oku, kasayı aç, emisyonu hesapla. Kimin geçeceğine sen karar ver.</p>
     <div class="row">
       <button class="btn-primary" data-primary id="btn-start">Vardiyaya başla</button>
+      <button class="btn-quiet" id="btn-about">Oyun hakkında</button>
       <button class="btn-quiet" id="btn-motion" aria-pressed="${!settings.motion}">${settings.motion ? 'Hareketi azalt' : 'Hareket azaltıldı'}</button>
     </div>
     <p class="fine">Ses için tarayıcı sekmesinin sesi açık olsun. Klavye: 1 2 3 karar, Q belgeler, E kasa, F el kitabı, Enter devam, M ses.</p>
   `, 'title-screen');
+  $('btn-about').addEventListener('click', () => { audio.init(); audio.click(); aboutScreen(); });
   $('btn-start').addEventListener('click', async () => {
     audio.init(); audio.startAmbience(); audio.startMusic(); audio.click();
     ui.hideScreen();
@@ -96,6 +98,41 @@ function titleScreen() {
   });
 }
 
+// Oyun hakkında: jüri ve yeni oyuncu için tek sayfalık tanıtım.
+function aboutScreen() {
+  ui.screen(`
+    <article class="doc about">
+      ${ui.letterhead('Bilgi notu')}
+      <h2>Oyun hakkında</h2>
+      <p class="about-lede"><b>Kapı 31</b>, iklim değişikliğiyle mücadelede yeni bir aracı, sınırda karbon düzenlemesini, bir belge inceleme oyununa dönüştürüyor. 2031 yılında Antalya Limanı'nda karbon denetçisisin. Avrupa'ya giden her tırın emisyonu senin kapından geçiyor.</p>
+
+      <h3>Nasıl oynanır</h3>
+      <ol class="about-steps">
+        <li><b>Oku.</b> Manifestoyu ve karbon beyanını incele. Kantar gerçek ağırlığı gösterir.</li>
+        <li><b>Kontrol et.</b> Kasayı açıp yükü gör, emisyon formunda hesabı doğrula, kamyonun motoruna bak.</li>
+        <li><b>Karar ver.</b> Geçiş ver, SKDM vergisi kes ya da geri çevir.</li>
+      </ol>
+
+      <h3>Neden önemli</h3>
+      <p>AB'nin Sınırda Karbon Düzenleme Mekanizması (SKDM), demir-çelik, alüminyum, çimento ve gübre gibi ürünlerin üretim emisyonunu sınırda fiyatlandırıyor. Türkiye, AB'nin en büyük ticaret ortaklarından biri olarak doğrudan etkileniyor. Oyun, bu düzenlemenin mantığını ve sahtecilikle mücadelenin neden önemli olduğunu oynayarak anlatıyor.</p>
+      <p>Kapıda geçirdiğin her ton emisyon ertesi gün şehri biraz daha ısıtır. Isınan hava faturaları artırır, ailen sıcakla baş etmek zorunda kalır. İklim krizinin bedelini en çok kimin ödediğini oyun içinde hissedersin.</p>
+
+      <h3>Yapım</h3>
+      <dl class="about-credits">
+        <div><dt>Etkinlik</dt><dd>GameUP Türkiye İklim Oyun Hackathonu, 2026</dd></div>
+        <div><dt>Geliştirme</dt><dd>Sercan Şençanlı ve ekibi</dd></div>
+        <div><dt>Teknoloji</dt><dd>Three.js ve saf JavaScript. Tüm 3D modeller, dokular ve sesler kodla üretildi; harici asset yok.</dd></div>
+      </dl>
+
+      <p class="about-note">Oyundaki yönetmelik, kurumlar ve firmalar kurgudur. Emisyon faktörleri yuvarlatılmış, taşıma faktörleri oyun dengesi için abartılmıştır.</p>
+      <button class="btn-primary" data-primary id="btn-about-back">Ana ekrana dön</button>
+    </article>`, 'about-screen');
+  const back = () => { audio.click(); document.removeEventListener('keydown', esc); titleScreen(); };
+  const esc = (e) => { if (e.key === 'Escape') back(); };
+  document.addEventListener('keydown', esc);
+  $('btn-about-back').addEventListener('click', back);
+}
+
 // Giriş: iklim göçü hikâyesi ve atama mektubu.
 function introScreen() {
   S.phase = 'screen';
@@ -105,8 +142,9 @@ function introScreen() {
       <p class="intro-line" style="--i:0">Konya'ya üç yıldır doğru dürüst yağmur düşmedi. Tarla çatladı, kuyu kurudu.</p>
       <p class="intro-line" style="--i:1">Annen Hatice ve kardeşin Ege ile kıyıya, Antalya'ya taşındınız. Burada da termometre her yaz biraz daha yükseliyor.</p>
       <p class="intro-line" style="--i:2">Bu sabah kapının altından bir zarf atılmış.</p>
-      <article class="letter" style="--i:3">
-        <header><span>T.C. Antalya Liman İdaresi</span><span>Sayı: KSY-31/0614</span></header>
+      <article class="letter doc" style="--i:3">
+        ${ui.letterhead('Sayı: KSY-31/0614')}
+        ${ui.stampHTML('Kabul', 'blue', 3.6, -8)}
         <p>Sayın aday,</p>
         <p>Karbon Sınır Yönetmeliği kapsamında açılan <b>karbon denetçisi</b> kadrosuna yaptığınız başvuru kabul edilmiştir.</p>
         <p>Görev yeriniz Antalya Limanı, <b>Kapı 31</b>'dir. Maaşınız günlük ödenir. Doğru kararlar için prim verilir, hatalı kararlar maaştan kesilir.</p>
@@ -126,8 +164,9 @@ function memoScreen() {
   const d = day();
   S.phase = 'screen';
   ui.screen(`
-    <article class="memo">
-      <header><span>Liman İdaresi</span><span>Genelge ${2031}/${d.no}</span></header>
+    <article class="memo doc">
+      ${ui.letterhead(`Genelge 2031/${d.no}`)}
+      ${ui.stampHTML('Yürürlükte', 'red', 0.55, -10)}
       <h2>Gün ${d.no}</h2>
       <p class="memo-weather">Antalya bugün ${S.home.temp}°C</p>
       <p>${d.genelge}</p>
@@ -168,8 +207,9 @@ function dayEndScreen() {
 
   ui.screen(`
     <div class="dayend">
-      <article class="report">
-        <p class="paper-name">Liman Bülteni, gün ${d.no}</p>
+      <article class="report doc">
+        ${ui.stampHTML('Vardiya kapandı', s.wrong === 0 ? 'green' : 'red', 0.6, -7)}
+        <p class="paper-name">Liman Bülteni<span>Gün ${d.no}, Haziran 2031</span></p>
         <h2>${head}</h2>
         <dl class="stats">
           <div><dt>Doğru karar</dt><dd>${s.right} / ${d.deck.length}</dd></div>
@@ -240,8 +280,11 @@ function finalScreen() {
   const homeLine = sick.length
     ? `${sick.map((m) => m.ad.split(' ')[1]).join(' ve ')} hasta yatıyor. ${H.debt ? `Ev sahibine ${H.debt} ₺ borcun var.` : ''}`
     : H.debt ? `Ailen iyi ama ev sahibine ${H.debt} ₺ borcun var.` : 'Ailen iyi, faturalar ödendi. Bu yaz idare edeceksiniz.';
+  const grade = acc >= 0.9 ? ['Takdir', 'green'] : acc >= 0.7 ? ['Başarılı', 'blue'] : acc >= 0.5 ? ['Yeterli', 'amber'] : ['Uyarı', 'red'];
   ui.screen(`
-    <article class="final">
+    <article class="final doc">
+      ${ui.letterhead('Personel sicil kaydı')}
+      ${ui.stampHTML(grade[0], grade[1], 0.7, -11)}
       <p class="kicker">Haftanın sonucu</p>
       <h2>${rank}</h2>
       <p class="lede">${n} kamyonun ${T.right} tanesinde doğru karar verdin. Beyan dışı bırakılmış <b>${fmt(T.hidden)} t CO₂e</b> emisyonu kapıda yakaladın.</p>
@@ -499,6 +542,7 @@ function advance() {
 
 // ---------------- Bağlantılar ----------------
 const selectTab = ui.bindTabs();
+ui.setStampSound(() => audio.stampHit());
 ui.formClear();
 ui.bindForm((ev) => {
   audio.click();

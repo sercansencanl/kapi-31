@@ -92,6 +92,11 @@ class AudioEngine {
     this.tone({ type: 'sine', f: 1568, t: 0.03, dur: 0.5, vol: 0.12 });
     this.tone({ type: 'sine', f: 2093, t: 0.08, dur: 0.6, vol: 0.1 });
   }
+  stampHit() { // lastik damga: tok vuruş + kağıt hışırtısı
+    this.tone({ type: 'sine', f: 140, f2: 55, dur: 0.16, vol: 0.32 });
+    this.noise({ dur: 0.07, vol: 0.28, type: 'lowpass', f: 900 });
+    this.noise({ t: 0.03, dur: 0.12, vol: 0.08, type: 'bandpass', f: 2400, q: 0.8 });
+  }
   stamp() { // gün sonu
     [0, 0.12, 0.24].forEach((t, i) => this.tone({ type: 'triangle', f: mtof([69, 73, 76][i]), t, dur: 0.6, vol: 0.13 }));
   }
