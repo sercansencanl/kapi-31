@@ -200,7 +200,7 @@ export class World {
     this.deskLed = art.makeLed();
     const led = new THREE.Group(); con.add(led);
     box(0.29, 0.02, 0.13, dark, 0, 0.005, 0, led);
-    const ledFace = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.108), new THREE.MeshBasicMaterial({ map: this.deskLed.texture, toneMapped: false, color: new THREE.Color(5, 5, 5) }));
+    const ledFace = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.108), new THREE.MeshBasicMaterial({ map: this.deskLed.texture, toneMapped: false, color: new THREE.Color(1.5, 1.5, 1.5) }));
     ledFace.rotation.x = -Math.PI / 2; ledFace.position.y = 0.016; led.add(ledFace);
     this.ledGroup = led;
 
@@ -478,7 +478,7 @@ export class World {
     const dark = std('#1d2226', 0.6, 0.4);
     const p = cyl(0.14, 0.14, 4.2, 10, dark, s); p.position.set(-1.6, 2.1, -4.7);
     this.led = art.makeLed();
-    const ledMat = new THREE.MeshBasicMaterial({ map: this.led.texture, toneMapped: false, color: new THREE.Color(5, 5, 5) });
+    const ledMat = new THREE.MeshBasicMaterial({ map: this.led.texture, toneMapped: false, color: new THREE.Color(3.3, 3.3, 3.3) });
     const panel = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.34, 0.2), [dark, dark, dark, dark, ledMat, dark]);
     panel.position.set(-1.6, 4.4, -4.7); panel.castShadow = true; s.add(panel);
 
