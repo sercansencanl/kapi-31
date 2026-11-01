@@ -104,7 +104,7 @@ function aboutScreen() {
     <article class="doc about">
       ${ui.letterhead('Bilgi notu')}
       <h2>Oyun hakkında</h2>
-      <p class="about-lede"><b>Kapı 31</b>, iklim değişikliğiyle mücadelede yeni bir aracı, sınırda karbon düzenlemesini, bir belge inceleme oyununa dönüştürüyor. 2031 yılında Antalya Limanı'nda karbon denetçisisin. Avrupa'ya giden her tırın emisyonu senin kapından geçiyor.</p>
+      <p class="about-lede"><b>Kapı 31</b>, iklimle mücadelede yeni bir yapı olan sınırda karbon düzenlemesini bir belge inceleme oyununa dönüştürüyor. 2031 yılında Antalya Limanı'nda karbon denetçisisin. Avrupa'ya giden her tırın emisyonu senin kapından geçiyor.</p>
 
       <h3>Nasıl oynanır</h3>
       <ol class="about-steps">
@@ -120,7 +120,7 @@ function aboutScreen() {
       <h3>Yapım</h3>
       <dl class="about-credits">
         <div><dt>Etkinlik</dt><dd>GameUP Türkiye İklim Oyun Hackathonu, 2026</dd></div>
-        <div><dt>Geliştirme</dt><dd>Sercan Şençanlı ve ekibi</dd></div>
+        <div><dt>Ekip</dt><dd>GameUP Türkiye Hackathon, 29. Ekip</dd></div>
         <div><dt>Teknoloji</dt><dd>Three.js ve saf JavaScript. Tüm 3D modeller, dokular ve sesler kodla üretildi; harici asset yok.</dd></div>
       </dl>
 

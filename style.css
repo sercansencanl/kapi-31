@@ -378,7 +378,7 @@ svg .fill { fill: currentColor; stroke: none; }
 }
 .kicker { margin: 0; font-size: 1.15rem; font-weight: 600; color: var(--hazard); }
 .title {
-  margin: 0 0 .2rem; font: 800 clamp(5.5rem, 17vw, 13rem)/.82 var(--stencil);
+  margin: 0 0 .2em; font: 800 clamp(5.5rem, 17vw, 13rem)/.82 var(--stencil);
   color: #f7f4ec; letter-spacing: -.01em;
   text-shadow: 0 4px 30px rgba(0,0,0,.35);
 }
