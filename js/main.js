@@ -7,6 +7,7 @@ import { $, fmt } from './ui.js';
 import { audio } from './audio.js';
 import { settings, wait } from './feel.js';
 import { iconURL } from './art.js';
+import { upgradeRealism } from './realism.js';
 
 // 3D dokular (tabela, konteyner yazıları) fontları kullanıyor: önce fontlar.
 try {
@@ -18,6 +19,8 @@ try {
 } catch { /* yedek fontla devam */ }
 
 const world = new World($('world'), $('stage'));
+// Gerçekçi gökyüzü ve dokular arka planda yüklenir; hazır olunca devreye girer.
+upgradeRealism(world);
 
 const S = {
   dayIdx: 0, idx: 0, deck: [], truck: null,
@@ -121,7 +124,8 @@ function aboutScreen() {
       <dl class="about-credits">
         <div><dt>Etkinlik</dt><dd>GameUP Türkiye İklim Oyun Hackathonu, 2026</dd></div>
         <div><dt>Ekip</dt><dd>GameUP Türkiye Hackathon, 29. Ekip</dd></div>
-        <div><dt>Teknoloji</dt><dd>Three.js ve saf JavaScript. Tüm 3D modeller, dokular ve sesler kodla üretildi; harici asset yok.</dd></div>
+        <div><dt>Teknoloji</dt><dd>Three.js ve saf JavaScript. 3D modeller ve sesler kodla üretildi.</dd></div>
+        <div><dt>Dokular</dt><dd>Gökyüzü (HDRI), asfalt, beton ve konteyner yüzeyleri: Poly Haven, CC0 lisansı.</dd></div>
       </dl>
 
       <p class="about-note">Oyundaki yönetmelik, kurumlar ve firmalar kurgudur. Emisyon faktörleri yuvarlatılmış, taşıma faktörleri oyun dengesi için abartılmıştır.</p>

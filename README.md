@@ -15,7 +15,8 @@ python sunucu.py
 ## Teknik
 
 - Three.js (CDN), sade HTML/CSS/JS modülleri, derleme adımı yok
-- Tüm 3D modeller, dokular ve sesler kodla üretilir; harici asset yok
+- 3D modeller ve sesler kodla üretilir
+- Gökyüzü (HDRI) ve asfalt, beton, konteyner dokuları: [Poly Haven](https://polyhaven.com), CC0 lisansı (`assets/`)
 
 ## Not
 

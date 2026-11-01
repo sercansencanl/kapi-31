@@ -409,9 +409,9 @@ export class World {
 
   // ---------------- Çevre ----------------
   buildLights() {
-    const hemi = new THREE.HemisphereLight(0xcfe0f0, 0x8a7a66, 0.75);
+    const hemi = this.hemi = new THREE.HemisphereLight(0xcfe0f0, 0x8a7a66, 0.75);
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffd9ad, 2.6);
+    const sun = this.sun = new THREE.DirectionalLight(0xffd9ad, 2.6);
     sun.position.set(-38, 42, 30);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -431,19 +431,20 @@ export class World {
       cols.push(c.r, c.g, c.b);
     }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-    this.scene.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false })));
+    this.skyMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false }));
+    this.scene.add(this.skyMesh);
 
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: art.sunGlow(), fog: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-    glow.position.set(-420, 70, -700); glow.scale.set(380, 380, 1);
+    glow.position.set(-420, 70, -700); glow.scale.set(380, 380, 1); this.sunGlow = glow;
     this.scene.add(glow);
   }
 
   buildGround() {
     const s = this.scene;
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), std('#ffffff', 0.95, 0, { map: art.concreteTexture() }));
+    const ground = this.groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), std('#ffffff', 0.95, 0, { map: art.concreteTexture() }));
     ground.rotation.x = -Math.PI / 2; ground.position.z = -100; ground.receiveShadow = true; s.add(ground);
 
-    const lane = new THREE.Mesh(new THREE.PlaneGeometry(220, 8.2), std('#ffffff', 0.88, 0, { map: art.asphaltTexture() }));
+    const lane = this.laneMesh = new THREE.Mesh(new THREE.PlaneGeometry(220, 8.2), std('#ffffff', 0.88, 0, { map: art.asphaltTexture() }));
     lane.rotation.x = -Math.PI / 2; lane.position.y = 0.02; lane.receiveShadow = true; s.add(lane);
     // bordür taşları
     const curb = std('#cfc9bd', 0.9);
@@ -523,7 +524,7 @@ export class World {
 
   buildYard() {
     const geo = new THREE.BoxGeometry(6, 2.6, 2.44);
-    const mat = std('#ffffff', 0.75, 0.15, { map: art.yardCorrugated() });
+    const mat = this.yardMat = std('#ffffff', 0.75, 0.15, { map: art.yardCorrugated() });
     const slots = [];
     for (let row = 0; row < 7; row++) {
       const z = -13 - row * 3.0;
@@ -588,7 +589,7 @@ export class World {
     box(11.5, 1.2, 17, std('#22364b', 0.6), -40, 19, 0, this.ship);
     box(4, 6, 4, std('#c8432f', 0.6), -46, 22, 0, this.ship);
     const shipGeo = new THREE.BoxGeometry(6, 2.6, 2.44);
-    const cont = new THREE.InstancedMesh(shipGeo, std('#ffffff', 0.75, 0.15, { map: art.yardCorrugated() }), 12 * 6 * 4);
+    const cont = new THREE.InstancedMesh(shipGeo, this.shipMat = std('#ffffff', 0.75, 0.15, { map: art.yardCorrugated() }), 12 * 6 * 4);
     let n = 0; const m4 = new THREE.Matrix4(), col = new THREE.Color();
     for (let i = 0; i < 12; i++) for (let j = 0; j < 6; j++) {
       const h = 1 + Math.floor(Math.random() * 4);
@@ -612,6 +613,7 @@ export class World {
       for (let i = 0; i < pts.length; i += 2) shape.lineTo(pts[i], pts[i + 1]);
       shape.lineTo(W / 2, -20);
       const m = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color, fog: false, toneMapped: true }));
+      (this.ridgeMats ||= []).push(m.material);
       m.position.set(0, -6, z);
       s.add(m);
     };
@@ -703,6 +705,7 @@ export class World {
     // Konteyner (içi boş; kapılar açılınca sandıklar görünür)
     const sideTex = art.containerSide(t.firm, t.code);
     const sideMat = std('#ffffff', 0.6, 0.2, { map: sideTex });
+    this.onTruckMaterials?.({ sideMat, paint });
     const cx = 2.1, cy = 2.45;
     box(8, 0.08, 2.5, interior, cx, 1.19, 0, body);
     const roof = new THREE.Mesh(new THREE.BoxGeometry(8, 0.08, 2.5), [paint, paint, paint, interior, paint, paint]);
