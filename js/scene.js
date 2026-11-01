@@ -1,4 +1,31 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// Son renk düzenlemesi: hafif kontrast, sıcak ışık / soğuk gölge ayrımı, vinyet ve ince film greni.
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, vignette: { value: 0.32 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float time; uniform float vignette; varying vec2 vUv;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
+    void main(){
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      float l = dot(c, vec3(0.2126,0.7152,0.0722));
+      c = mix(c, c * vec3(0.94,1.0,1.07), (1.0 - smoothstep(0.0,0.5,l)) * 0.5);   // gölgeler hafif soğuk
+      c = mix(c, c * vec3(1.06,1.01,0.93), smoothstep(0.5,1.0,l) * 0.5);          // ışıklar hafif sıcak
+      c = (c - 0.5) * 1.06 + 0.5;                                                 // kontrast
+      c = mix(vec3(l), c, 1.08);                                                  // doygunluk
+      vec2 d = vUv - 0.5; c *= 1.0 - vignette * smoothstep(0.35, 0.95, length(d * vec2(1.15, 1.0)));
+      c += (hash(vUv * 900.0 + time) - 0.5) * 0.018;                              // gren
+      gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+    }`,
+};
 import { tween, Ease, updateTweens, Trauma, settings, wait } from './feel.js';
 import * as art from './art.js';
 
@@ -79,6 +106,7 @@ export class World {
     this.buildBirds();
     this.buildSmoke();
     this.buildDesk();
+    this.setupPost();
 
     this.raycaster = new THREE.Raycaster();
     this.ndc = new THREE.Vector2();
@@ -97,10 +125,36 @@ export class World {
     const w = this.host.clientWidth, h = this.host.clientHeight;
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
+    this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.fov = this.camera.aspect < 1.3 ? 52 : 38;
     this.camera.updateProjectionMatrix();
     this.layoutDesk();
+  }
+
+  // ---------------- Render hattı ----------------
+  setupPost() {
+    const r = this.renderer;
+    r.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    // Ortam yansıması: metal, cam ve boyalı yüzeyler çevreyi yansıtır.
+    const pmrem = new THREE.PMREMGenerator(r);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.45;
+    pmrem.dispose();
+    try {
+      const w = Math.max(1, this.host.clientWidth), h = Math.max(1, this.host.clientHeight);
+      const c = this.composer = new EffectComposer(r);
+      c.addPass(new RenderPass(this.scene, this.camera));
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.45, 0.5, 3.0);
+      c.addPass(this.bloom);
+      c.addPass(new OutputPass());
+      this.grade = new ShaderPass(GradeShader);
+      c.addPass(this.grade);
+      c.addPass(new SMAAPass(w * r.getPixelRatio(), h * r.getPixelRatio()));
+    } catch (err) {
+      console.warn('Efektler kapatıldı:', err);
+      this.composer = null;
+    }
   }
 
   // ---------------- Kabin konsolu (kameraya bağlı 3D masa) ----------------
@@ -146,7 +200,7 @@ export class World {
     this.deskLed = art.makeLed();
     const led = new THREE.Group(); con.add(led);
     box(0.29, 0.02, 0.13, dark, 0, 0.005, 0, led);
-    const ledFace = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.108), new THREE.MeshBasicMaterial({ map: this.deskLed.texture, toneMapped: false }));
+    const ledFace = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.108), new THREE.MeshBasicMaterial({ map: this.deskLed.texture, toneMapped: false, color: new THREE.Color(5, 5, 5) }));
     ledFace.rotation.x = -Math.PI / 2; ledFace.position.y = 0.016; led.add(ledFace);
     this.ledGroup = led;
 
@@ -180,7 +234,7 @@ export class World {
     mk('inspect', '#e9862a', 'Kasayı aç', 'E');
 
     // Masa lambası ışığı
-    const lamp = new THREE.PointLight(0xffe6c0, 2.2, 3.5, 1.2); lamp.position.set(-0.1, 0.45, -0.85); rig.add(lamp);
+    const lamp = new THREE.PointLight(0xffe6c0, 0.9, 3.5, 1.2); lamp.position.set(-0.1, 0.45, -0.85); rig.add(lamp);
 
     this.papers = {};
     rig.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
@@ -343,7 +397,7 @@ export class World {
 
   // ---------------- Çevre ----------------
   buildLights() {
-    const hemi = new THREE.HemisphereLight(0xcfe0f0, 0x8a7a66, 1.05);
+    const hemi = new THREE.HemisphereLight(0xcfe0f0, 0x8a7a66, 0.75);
     this.scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xffd9ad, 2.6);
     sun.position.set(-38, 42, 30);
@@ -424,7 +478,7 @@ export class World {
     const dark = std('#1d2226', 0.6, 0.4);
     const p = cyl(0.14, 0.14, 4.2, 10, dark, s); p.position.set(-1.6, 2.1, -4.7);
     this.led = art.makeLed();
-    const ledMat = new THREE.MeshBasicMaterial({ map: this.led.texture, toneMapped: false });
+    const ledMat = new THREE.MeshBasicMaterial({ map: this.led.texture, toneMapped: false, color: new THREE.Color(5, 5, 5) });
     const panel = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.34, 0.2), [dark, dark, dark, dark, ledMat, dark]);
     panel.position.set(-1.6, 4.4, -4.7); panel.castShadow = true; s.add(panel);
 
@@ -518,18 +572,24 @@ export class World {
     }
     cont.count = n; cont.castShadow = true; this.ship.add(cont);
 
-    // Beydağları
-    // Uzak Beydağları: sisten etkilenmez, renk perspektifi elle verilir.
-    const ridge = [new THREE.MeshLambertMaterial({ color: '#8e93b4', flatShading: true, fog: false }),
-      new THREE.MeshLambertMaterial({ color: '#a7a6c0', flatShading: true, fog: false })];
-    for (let i = 0; i < 22; i++) {
-      const far = i % 2;
-      const r = 70 + Math.random() * 80, h = (far ? 70 : 45) + Math.random() * 55;
-      const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, 4 + Math.floor(Math.random() * 3)), ridge[far]);
-      m.position.set(-800 + i * 75 + Math.random() * 30, h / 2 - 12, (far ? -720 : -600) - Math.random() * 60);
-      m.rotation.y = Math.random() * Math.PI;
+    // Uzak Beydağları: gölgesiz, pusa karışan iki katman silüet (hava perspektifi).
+    const ridgeLayer = (z, base, amp, color, seed) => {
+      const pts = [], W = 2400, N = 90;
+      for (let i = 0; i <= N; i++) {
+        const x = -W / 2 + (i / N) * W, u = i / N * 6.283 + seed;
+        const y = base + amp * (0.55 * Math.sin(u * 1.3) + 0.3 * Math.sin(u * 3.7 + 1.1) + 0.15 * Math.sin(u * 9.1 + 2.3));
+        pts.push(x, Math.max(0, y));
+      }
+      const shape = new THREE.Shape();
+      shape.moveTo(-W / 2, -20);
+      for (let i = 0; i < pts.length; i += 2) shape.lineTo(pts[i], pts[i + 1]);
+      shape.lineTo(W / 2, -20);
+      const m = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color, fog: false, toneMapped: true }));
+      m.position.set(0, -6, z);
       s.add(m);
-    }
+    };
+    ridgeLayer(-760, 70, 55, '#c9bfcb', 0.4);
+    ridgeLayer(-640, 38, 34, '#ad9fb2', 2.1);
   }
 
   buildBirds() {
@@ -573,7 +633,7 @@ export class World {
     [-1.236, 1.236].forEach((z) => box(1.0, 0.75, 0.04, glass, -3.95, 2.85, z, body));
     box(0.05, 0.75, 1.7, dark, -4.53, 1.75, 0, body);
     for (let i = 0; i < 4; i++) box(0.06, 0.05, 1.6, chrome, -4.56, 1.5 + i * 0.17, 0, body);
-    const head = std('#fff3d2', 0.3, 0, { emissive: '#ffe9b8', emissiveIntensity: 1.4 });
+    const head = std('#fff3d2', 0.3, 0, { emissive: '#ffe9b8', emissiveIntensity: 7 });
     [-0.88, 0.88].forEach((z) => box(0.06, 0.2, 0.46, head, -4.55, 1.28, z, body));
     box(0.28, 0.32, 2.56, dark, -4.6, 0.92, 0, body);
     const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.21), new THREE.MeshStandardMaterial({ map: art.plateTexture(t.plate), roughness: 0.5 }));
@@ -665,7 +725,7 @@ export class World {
         [-0.8, 0.8].forEach((o) => { const b = cyl(0.44, 0.44, 0.1, 18, std('#ffffff', 0.5), body); b.rotation.z = Math.PI / 2; b.position.set(0.3 + o, 0.9, z); });
       });
     } else {
-      const bm = std('#2a2f34', 0.5, 0.4), glow = std('#4ade80', 0.4, 0, { emissive: '#3ddc84', emissiveIntensity: 1.6 });
+      const bm = std('#2a2f34', 0.5, 0.4), glow = std('#4ade80', 0.4, 0, { emissive: '#3ddc84', emissiveIntensity: 5 });
       [-1, 1].forEach((sd) => {
         box(2.8, 0.62, 0.42, bm, 0.3, 0.9, sd * 0.98, body);
         box(2.8, 0.07, 0.02, glow, 0.3, 1.0, sd * 1.2, body);
@@ -718,7 +778,7 @@ export class World {
   async openDoors() {
     const T = this.truck; if (!T || T.opened) return;
     T.opened = true;
-    tween(1.0, (k) => { T.lamp.intensity = 7 * k; }, Ease.outCubic);
+    tween(1.0, (k) => { T.lamp.intensity = 3.2 * k; }, Ease.outCubic);
     await tween(1.1, (k) => {
       T.doors.forEach((h) => { h.rotation.y = -h.userData.dir * 0.9 * Math.PI * k * -1; });
     }, Ease.outBack);
@@ -728,7 +788,7 @@ export class World {
   async closeDoorsQuick() {
     const T = this.truck; if (!T || !T.opened) return;
     const start = T.doors.map((h) => h.rotation.y);
-    await tween(0.6, (k) => { T.doors.forEach((h, i) => { h.rotation.y = start[i] * (1 - k); }); T.lamp.intensity = 7 * (1 - k); }, Ease.inOutCubic);
+    await tween(0.6, (k) => { T.doors.forEach((h, i) => { h.rotation.y = start[i] * (1 - k); }); T.lamp.intensity = 3.2 * (1 - k); }, Ease.inOutCubic);
     T.opened = false;
   }
 
@@ -911,6 +971,9 @@ export class World {
     this.camera.lookAt(target);
     this.camera.rotateZ(sh.r);
 
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) {
+      this.grade.uniforms.time.value = (t * 60) % 1000;
+      this.composer.render();
+    } else this.renderer.render(this.scene, this.camera);
   }
 }
