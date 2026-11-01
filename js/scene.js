@@ -65,8 +65,8 @@ const DESK_LAYOUT = {
   wide: {
     s: 0.69,
     manifest: [-0.43, -0.2, -0.05], decl: [-0.145, -0.18, 0.06],
-    led: [0.15, -0.39], tablet: [0.16, -0.15], inspect: [0.39, -0.33],
-    onay: [0.33, -0.06], vergi: [0.47, -0.06], ret: [0.61, -0.06],
+    led: [0.15, -0.42], tablet: [0.16, -0.19], inspect: [0.39, -0.37],
+    onay: [0.33, -0.12], vergi: [0.47, -0.12], ret: [0.61, -0.12],
     mug: [-0.61, -0.44], sticky: [-0.6, -0.27, 0.12],
     read: { manifest: [-0.27, -0.02, -0.8], decl: [0.05, -0.02, -0.8] }, // sağdaki el kitabı paneline yer bırak
   },
@@ -272,7 +272,7 @@ export class World {
     this.layout = L;
     const s = Math.max(0.5, Math.min(1.25, hw / L.s));
     this.con.scale.setScalar(s);
-    this.con.position.set(0, -0.84 * hh, -d);
+    this.con.position.set(0, (this.camera.aspect >= 1.1 ? -1.0 : -0.9) * hh, -d);
     const place = (obj, [x, z]) => obj.position.set(x, 0, z);
     place(this.ledGroup, L.led); place(this.tablet, L.tablet);
     ['onay', 'vergi', 'ret', 'inspect'].forEach((n) => place(this.buttons[n].g, L[n]));
